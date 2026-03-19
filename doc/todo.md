@@ -205,28 +205,45 @@ SetAttribute({
 
 ## 工具语义
 
-所有工具返回 JSON 字符串。
+所有工具都返回 JSON 字符串。
 
-成功格式：
+成功时直接返回对应工具的结果对象：
 
-```json
+- `Glob` / `Grep` / `Read` / `Edit` / `Write` 返回结构化结果对象
+- `Delete` / `CreateLorebook` / `AskUserQuestion` / `GetAttribute` / `SetAttribute` 也返回各自结果对象
+
+所有工具在失败场景下都必须返回完全统一的错误结构：
+
+```ts
 {
-  "ok": true,
-  "data": {}
+  is_error: true;
+  errorType: string;
+  message: string;
+  details?: Array<{
+    expected: string;
+    received: string;
+    path?: string[];
+  }>;
 }
 ```
 
-失败格式：
+统一约定：
 
-```json
+- 业务错误时，`errorType` 使用下文定义的错误码
+- 参数校验错误时，`errorType` 使用 `InputValidationError`
+- `message` 直接给模型可读文本
+- `details` 仅在确实有结构化补充信息时返回
+- 路径无效类错误的 `details` 格式统一为：
+
+```ts
 {
-  "ok": false,
-  "error": {
-    "code": "PATH_CONFLICT",
-    "message": "出现同名条目，请要求 user 变更对应条目名。"
-  }
+  expected: "合法的虚拟路径";
+  received: string;
+  path: ["file_path"];
 }
 ```
+
+若对应参数不是 `file_path`，则 `path` 改为对应的参数名数组
 
 至少定义以下错误码：
 
@@ -241,9 +258,28 @@ SetAttribute({
 - `USER_REJECTED`
 - `CONTENT_TOO_LARGE`
 
+`StructuredPatch` 结构定义如下：
+
+```ts
+interface StructuredPatch {
+  oldStart: number;
+  oldLines: number;
+  newStart: number;
+  newLines: number;
+  lines: string[];
+}
+```
+
+其中：
+
+- `lines` 采用 unified diff 风格
+- 以 `+` 开头表示新增行
+- 以 `-` 开头表示删除行
+- 以空格开头表示上下文行
+
 ### `Glob`
 
-签名优先参考 `reference.json`：
+签名：
 
 ```ts
 {
@@ -258,26 +294,35 @@ SetAttribute({
 - `path` 省略时默认等价于根目录 `/`
 - `path = "/"` 时列世界书
 - `path = "/<LorebookName>"` 或其子目录时列该目录下内容
-- 返回项带类型信息：
+- 返回格式：
 
 ```ts
 {
-  matches: Array<{
-    path: string;
-    type: "file" | "directory";
-  }>;
+  filenames: string[];
+  durationMs: number;
+  numFiles: number;
+  truncated: boolean;
 }
 ```
 
+补充约定：
+
+- 目录项在 `filenames` 中保留尾斜杠，例如 `/设定集/Folder/`
+- 文件项不带尾斜杠，例如 `/设定集/Folder`
+- `numFiles` 表示总匹配数，不受截断影响
+- `truncated` 表示结果是否因数量限制被截断
+- 这里沿用 `filenames` 字段名，不再额外返回 `type`；目录/文件区分通过尾斜杠完成
+
 ### `Grep`
 
-签名优先参考 `reference.json`：
+签名：
 
 ```ts
 {
   pattern: string;
   path: string;
   glob?: string;
+  type?: string;
   output_mode?: "content" | "files_with_matches" | "count";
   "-B"?: number;
   "-A"?: number;
@@ -298,10 +343,51 @@ SetAttribute({
 - `path` 必须落在某一个确定的世界书内
 - 只搜索 `content`
 - 不搜索属性字段
+- 返回格式：
+
+`files_with_matches` 模式：
+
+```ts
+{
+  mode: "files_with_matches";
+  filenames: string[];
+  numFiles: number;
+  appliedLimit?: number;
+}
+```
+
+`content` 模式：
+
+```ts
+{
+  mode: "content";
+  content: string;
+}
+```
+
+`count` 模式：
+
+```ts
+{
+  mode: "count";
+  numFiles: number;
+  filenames: string[];
+  content: string;
+}
+```
+
+补充约定：
+
+- `content` 字段格式保持 ripgrep 兼容风格
+- 匹配行使用 `file-path:line-number:content`
+- 上下文行使用 `file-path-line-number-content`
+- 不同匹配块之间用 `--` 分隔
+- `file-path` 使用虚拟路径而不是磁盘路径
+- `head_limit` 生效时，`files_with_matches` 模式返回 `appliedLimit`
 
 ### `Read`
 
-签名优先参考 `reference.json`：
+签名：
 
 ```ts
 {
@@ -315,26 +401,41 @@ SetAttribute({
 
 - `file_path` 必须是绝对路径
 - 只能读取条目，不可读取目录
+- `file_path` 必须指向 `/<LorebookName>/<EntryPath>`，不能直接指向 `/<LorebookName>`
 - 支持对长内容分段读取
-- 默认按行返回前 2000 行
-- 返回中包含：
+- 默认 `offset = 0`、`limit = 0`
+- 返回格式：
 
 ```ts
 {
-  file_path: string;
-  content: string;
-  total_lines: number;
-  offset: number;
-  limit: number;
-  has_more: boolean;
+  type: "text";
+  file: {
+    filePath: string;
+    content: string;
+    numLines: number;
+    startLine: number;
+    totalLines: number;
+  };
 }
 ```
 
-若内容过长，模型应继续用 `offset` / `limit` 分段读取。
+补充约定：
+
+- `offset` 从 `0` 开始计数，表示跳过前多少行后再返回，默认值为 `0`
+- `limit` 表示本次最多返回多少行，默认值为 `0`，表示不限制行数
+- `file.content` 使用 `cat -n` 风格，每行格式为 `空格 + 行号 + \t + 行内容`
+- `filePath` 回显归一化后的虚拟路径
+- `startLine` 等于请求的 `offset + 1`
+- `numLines` 为本次实际返回的行数
+- 若内容过长，模型继续使用 `offset` / `limit` 分段读取；不再额外返回 `has_more`
+- 若未指定 `limit`，且本次将返回的总字符数大于 `5000`，则返回 `CONTENT_TOO_LARGE`
+- 若 `file_path` 直接指向世界书本身而非条目，则返回 `InputValidationError`
+- 若 `offset < 0`、`limit < 0` 或参数类型不合法，则返回 `InputValidationError`
+- 此时 `details` 中应指出具体出错参数，例如 `offset` 或 `limit`
 
 ### `Write`
 
-签名优先参考 `reference.json`：
+签名：
 
 ```ts
 {
@@ -345,14 +446,38 @@ SetAttribute({
 
 约定：
 
+- `file_path` 必须指向 `/<LorebookName>/<EntryPath>`，不能直接指向 `/<LorebookName>`
 - 对已有条目，直接覆盖 `content`
 - 对不存在的条目，新建条目
-- 新建条目的 `comment` 由 `file_path` 推导
+- 新建条目的 `comment` 由归一化后的 `file_path` 去掉 `/<LorebookName>/` 前缀后推导
 - 其余字段使用默认值
+- 返回格式：
+
+```ts
+{
+  type: "create" | "update";
+  filePath: string;
+  content: string;
+  structuredPatch: StructuredPatch[];
+  originalFile: string | null;
+}
+```
+
+补充约定：
+
+- `content` 为写入后的完整纯文本内容，不带行号前缀
+- 新建条目时：
+  - `type = "create"`
+  - `originalFile = null`
+  - `structuredPatch = []`
+- 更新已有条目时：
+  - `type = "update"`
+  - `originalFile` 为修改前的完整内容
+  - `structuredPatch` 为本次变更对应的结构化补丁
 
 ### `Edit`
 
-签名优先参考 `reference.json`：
+签名：
 
 ```ts
 {
@@ -365,10 +490,31 @@ SetAttribute({
 
 约定：
 
+- `file_path` 必须指向 `/<LorebookName>/<EntryPath>`，不能直接指向 `/<LorebookName>`
 - 只作用于条目 `content`
 - 默认只替换一次
 - 未命中时返回 `TEXT_NOT_FOUND`
 - 如果 `old_string` 命中多处且未指定 `replace_all: true`，返回错误，避免不确定修改
+- 返回格式：
+
+```ts
+{
+  filePath: string;
+  oldString: string;
+  newString: string;
+  originalFile: string | null;
+  structuredPatch: StructuredPatch[];
+  userModified: boolean;
+  replaceAll: boolean;
+}
+```
+
+补充约定：
+
+- `originalFile` 为修改前的完整条目内容
+- `structuredPatch` 为本次替换生成的结构化补丁
+- `userModified` 这里固定为 `false`，表示没有额外的人工交互式编辑步骤
+- `replaceAll` 回显实际采用的替换策略
 
 ### `Delete`
 
@@ -382,10 +528,21 @@ SetAttribute({
 
 约定：
 
+- `file_path` 必须指向 `/<LorebookName>/<EntryPath>`，不能直接指向 `/<LorebookName>`
 - 只删除条目
 - 不删除世界书
 - 不删除虚拟目录
+- 若 `file_path` 直接指向世界书本身，返回 `InputValidationError`
+- 若 `file_path` 指向仅由 `comment` 层级关系推导出的虚拟目录，返回 `InputValidationError`
 - 若删除后某虚拟目录为空，该目录自然消失，无需额外操作
+- 返回格式：
+
+```ts
+{
+  filePath: string;
+  deleted: true;
+}
+```
 
 ### `CreateLorebook`
 
@@ -402,6 +559,14 @@ SetAttribute({
 - 只创建空世界书
 - 若世界书已存在，返回 `WORLD_ALREADY_EXISTS`
 - 不负责初始化条目
+- 返回格式：
+
+```ts
+{
+  lorebookName: string;
+  created: true;
+}
+```
 
 ### `AskUserQuestion`
 
@@ -417,7 +582,17 @@ SetAttribute({
 
 - 内部通过 `SillyTavern.callGenericPopup` 展示
 - 返回用户输入文本
+- 用户主动提交空字符串时，仍视为成功，返回 `answer: ""`
+- 用户取消、关闭或明确拒绝输入时，返回 `USER_REJECTED`
 - 权限确认不通过该工具实现，而由权限层自动处理
+- 返回格式：
+
+```ts
+{
+  question: string;
+  answer: string;
+}
+```
 
 ### `GetAttribute`
 
@@ -429,14 +604,18 @@ SetAttribute({
 }
 ```
 
-返回：
+返回格式：
 
 ```ts
-WorldbookEntry
+{
+  filePath: string;
+  attributes: WorldbookEntry;
+}
 ```
 
 说明：
 
+- `file_path` 必须指向 `/<LorebookName>/<EntryPath>`，不能直接指向 `/<LorebookName>`
 - 直接返回条目当前的 `WorldbookEntry`
 - 不单独裁剪字段
 - 普通内容编辑仍优先使用 `Read` / `Write` / `Edit`
@@ -448,16 +627,36 @@ WorldbookEntry
 ```ts
 {
   file_path: string;
-  attributes: PartialDeep<WorldbookEntry>;
+  attributes: WorldbookEntryPatch;
+}
+```
+
+其中：
+
+```ts
+interface WorldbookEntryPatch {
+  // 与 WorldbookEntry 字段集合相同，但不包含 comment
+  // 所有字段均为 optional
+  // 对象字段递归 optional
+  // 数组字段仍按整体替换处理
 }
 ```
 
 说明：
 
-- `attributes` 是 `WorldbookEntry` 的子集
+- `file_path` 必须指向 `/<LorebookName>/<EntryPath>`，不能直接指向 `/<LorebookName>`
+- `attributes` 是不包含 `comment` 的 `WorldbookEntry` patch
 - 仅修改提供的字段
-- 可修改 `comment`
+- 不允许修改 `comment`
 - 可修改 `content`，但普通文本修改仍建议优先使用 `Write` / `Edit`
+- 返回格式：
+
+```ts
+{
+  filePath: string;
+  attributes: WorldbookEntry;
+}
+```
 
 ## 底层实现
 
@@ -541,6 +740,10 @@ WorldbookEntry
 - `SetAttribute` 需要写权限
 - `Delete` 需要删权限
 - `AskUserQuestion` 不走世界书权限
+
+补充约定：
+
+- `CreateLorebook` 虽然创建前目标世界书尚不存在，但权限申请目标仍按将要创建的 `/<LorebookName>` 处理
 
 ### 授权交互
 
