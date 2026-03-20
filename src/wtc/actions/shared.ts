@@ -1,12 +1,8 @@
 import { ToolError } from '@/wtc/result';
-import {
-  buildPathIndex,
-  ensureNoConflict,
-  loadRawWorldbook,
-  requireFileTarget,
-} from '@/wtc/store';
+import { buildPathIndex, ensureNoConflict, loadRawWorldbook, requireFileTarget } from '@/wtc/store';
 
 export async function getIndexForWorldbook(worldbookName: string) {
+  // 先拉原始世界书，再建立一次只面向工具层的虚拟文件索引。
   const book = await loadRawWorldbook(worldbookName);
   return { book, index: buildPathIndex(worldbookName, book) };
 }
@@ -35,4 +31,3 @@ export function compilePattern(pattern: string, ignoreCase: boolean, multiline: 
     ]);
   }
 }
-

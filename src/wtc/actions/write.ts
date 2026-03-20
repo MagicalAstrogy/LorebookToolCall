@@ -22,6 +22,7 @@ export async function writeAction(args: z.infer<typeof writeArgsSchema>) {
     ensureNoConflict(index, normalized);
     const existing = index.exactFiles.get(normalized);
     if (existing) {
+      // 路径已存在时按覆盖写入处理，并返回结构化 patch 方便模型理解变更。
       const original = await readEntryContent(normalized);
       await updateWorldbookWith(worldbookName, worldbook =>
         worldbook.map(entry => (entry.uid === existing.uid ? { ...entry, content: args.content } : entry)),
@@ -41,6 +42,7 @@ export async function writeAction(args: z.infer<typeof writeArgsSchema>) {
         content: args.content,
       },
     ]);
+    // 底层创建接口不会替我们设置 comment，所以需要回写成目标虚拟路径。
     const created = new_entries[0];
     const reloaded = await loadRawWorldbook(worldbookName);
     const raw = reloaded.entries.find(entry => entry.id === created.uid);
@@ -59,4 +61,3 @@ export async function writeAction(args: z.infer<typeof writeArgsSchema>) {
     };
   });
 }
-

@@ -1,9 +1,7 @@
 import { z } from 'zod';
 import { resetPermissionCache } from '@/wtc/permission';
-import { stringifyError, stringifyResult, ToolError } from '@/wtc/result';
-import {
-  askUserQuestionAction,
-} from '@/wtc/actions/ask_user_question';
+import { stringifyResult, toErrorResult, ToolError } from '@/wtc/result';
+import { askUserQuestionAction } from '@/wtc/actions/ask_user_question';
 import { createLorebookAction } from '@/wtc/actions/create_lorebook';
 import { deleteAction } from '@/wtc/actions/delete';
 import { editAction } from '@/wtc/actions/edit';
@@ -26,8 +24,10 @@ import {
   writeArgsSchema,
   editArgsSchema,
 } from '@/wtc/schema';
+import { extractReasoningDetails } from '@/wtc/hooks';
 
 function parseArgs<T>(schema: z.ZodType<T>, args: unknown): T {
+  // 统一把 zod issue 转成工具协议要求的 details 结构。
   const result = schema.safeParse(args);
   if (result.success) {
     return result.data;
@@ -53,38 +53,68 @@ function registerJsonTool<T>(
   schema: z.ZodType<T>,
   action: (args: T) => Promise<unknown>,
 ) {
+  // 每个工具都约定返回 JSON 字符串，成功失败都走同一层包装。
   SillyTavern.registerFunctionTool({
     name,
     displayName: name,
     description,
     parameters: validationSchemaToJson(schema),
-    stealth: true,
+    stealth: false,
     formatMessage: () => '',
     shouldRegister: shouldRegisterTools,
     action: async rawArgs => {
+      let result: any = undefined;
       try {
         const args = parseArgs(schema, rawArgs);
-        return stringifyResult(await action(args));
+        result = await action(args);
       } catch (error) {
-        return stringifyError(error);
+        result = toErrorResult(error);
       }
+      const reasoningDetails = extractReasoningDetails();
+      if (reasoningDetails) {
+        result.reasoning_details = reasoningDetails;
+      }
+      return stringifyResult(result);
     },
   });
 }
 
+const globDescription =
+  'Fast file pattern matching tool that works with any codebase size\n- Supports glob patterns like "/${LorebookName}/[mvu_update]*" or "/${LorebookName}/*"\n- Returns matching file paths sorted by modification time\n- Use this tool when you need to find files by name patterns\n- When you are doing an open ended search that may require multiple rounds of globbing and grepping, use the Agent tool instead\n- You can call multiple tools in a single response. It is always better to speculatively perform multiple searches in parallel if they are potentially useful.';
+const grepDescription =
+  'A powerful search tool built on ripgrep\n\n  Usage:\n  - ALWAYS use Grep for search tasks. NEVER invoke `grep` or `rg` as a Bash command. The Grep tool has been optimized for correct permissions and access.\n  - Supports full regex syntax (e.g., "log.*Error", "function\\s+\\w+")\n  - Filter files with glob parameter (e.g., "/${LorebookName}/*", "/${LorebookName}/[mvu_update]*")\n  - Output modes: "content" shows matching lines, "files_with_matches" shows only file paths (default), "count" shows match counts\n  - Use Agent tool for open-ended searches requiring multiple rounds\n  - Pattern syntax: Uses ripgrep (not grep) - literal braces need escaping (use `interface\\{\\}` to find `interface{}` in Go code)\n  - Multiline matching: By default patterns match within single lines only. For cross-line patterns like `struct \\{[\\s\\S]*?field`, use `multiline: true`\n';
+const readDescription =
+  'Reads an entry from the virtual lorebook filesystem.\n\nUsage:\n- The file_path parameter must be an absolute virtual path like "/${LorebookName}/Entry"\n- By default, it reads the whole entry from the beginning\n- You can optionally specify offset and limit for long entries\n- Results are returned using cat -n format, with line numbers starting at 1\n- This tool can only read entry paths, not lorebook roots or virtual directories\n- You can call multiple tools in a single response. It is always better to speculatively read multiple potentially useful entries in parallel.';
+const writeDescription =
+  'Writes an entry to the virtual lorebook filesystem.\n\nUsage:\n- This tool overwrites the existing entry if one already exists at the provided path\n- If the target path does not exist, this tool creates a new lorebook entry at that virtual path\n- Prefer the Edit tool for partial modifications when you only need to replace a small part of an existing entry\n- The file_path parameter must be an absolute virtual path like "/${LorebookName}/Entry"\n- This tool only operates on entry paths, not lorebook roots or virtual directories.';
+const editDescription =
+  'Performs exact string replacements in lorebook entries.\n\nUsage:\n- Use this tool when you want to replace one piece of text inside an existing entry without rewriting the whole content\n- The edit will fail if old_string is not found\n- The edit will also fail if old_string matches multiple places unless replace_all is true\n- The file_path parameter must be an absolute virtual path like "/${LorebookName}/Entry"\n- This tool only operates on entry paths, not lorebook roots or virtual directories.';
+const deleteDescription =
+  'Deletes an entry from the virtual lorebook filesystem.\n\nUsage:\n- The file_path parameter must be an absolute virtual path like "/${LorebookName}/Entry"\n- This tool only deletes entries, not lorebooks\n- This tool does not delete virtual directories; if a path resolves to a directory-like prefix, the request will fail\n- Use this tool when you need to remove a specific lorebook entry.';
+const createLorebookDescription =
+  'Creates a new empty lorebook.\n\nUsage:\n- lorebook_name must be the exact lorebook name to create\n- The name must not contain "/"\n- If a lorebook with the same name already exists, the request will fail\n- Use this tool when you need a new lorebook root before writing entries into it.';
+const askUserQuestionDescription =
+  "Use this tool when you need to ask the user a direct question during execution.\n\nUsage:\n- Use this tool to gather missing information, clarify ambiguous instructions, or request user-provided text\n- The tool opens an input popup and returns the user's answer as a string\n- If the user cancels the popup, the request fails with USER_REJECTED\n- Prefer this tool only when the needed information cannot be inferred safely from the current context.";
+const getAttributeDescription =
+  'Retrieves the full attribute object for a lorebook entry.\n\nUsage:\n- The file_path parameter must be an absolute virtual path like "/${LorebookName}/Entry"\n- Attributes only exist on entries, not on lorebook roots or virtual directories\n- The returned attributes reuse the WorldbookEntry structure directly\n- Use this tool when you need metadata such as enabled state, insertion position, trigger strategy, or other entry fields.';
+const setAttributeDescription =
+  'Updates attributes for a lorebook entry using lossy patch semantics.\n\nUsage:\n- The file_path parameter must be an absolute virtual path like "/${LorebookName}/Entry"\n- The attributes parameter accepts a partial WorldbookEntry-shaped patch\n- Object fields are merged recursively, array fields are replaced as a whole, and scalar fields are overwritten\n- Fields you do not provide remain unchanged\n- If the patch changes comment and causes a normalized path conflict, the request will fail.';
+
 export function registerLorebookTools() {
-  registerJsonTool('Glob', '列出世界书或虚拟目录下的条目路径。', globArgsSchema, globAction);
-  registerJsonTool('Grep', '在世界书条目内容中搜索文本。', grepArgsSchema, grepAction);
-  registerJsonTool('Read', '读取世界书条目内容。', readArgsSchema, readAction);
-  registerJsonTool('Write', '创建或覆盖世界书条目内容。', writeArgsSchema, writeAction);
-  registerJsonTool('Edit', '替换世界书条目中的文本。', editArgsSchema, editAction);
-  registerJsonTool('Delete', '删除世界书条目。', deleteArgsSchema, deleteAction);
-  registerJsonTool('CreateLorebook', '创建空世界书。', createLorebookArgsSchema, createLorebookAction);
-  registerJsonTool('AskUserQuestion', '向用户弹出一个问题。', askUserQuestionArgsSchema, askUserQuestionAction);
-  registerJsonTool('GetAttribute', '获取世界书条目的属性。', getAttributeArgsSchema, getAttributeAction);
-  registerJsonTool('SetAttribute', '更新世界书条目的属性。', setAttributeArgsSchema, setAttributeAction);
+  // 注册集合与 doc/todo.md 中的 v1 工具列表保持一致。
+  registerJsonTool('Glob', globDescription, globArgsSchema, globAction);
+  registerJsonTool('Grep', grepDescription, grepArgsSchema, grepAction);
+  registerJsonTool('Read', readDescription, readArgsSchema, readAction);
+  registerJsonTool('Write', writeDescription, writeArgsSchema, writeAction);
+  registerJsonTool('Edit', editDescription, editArgsSchema, editAction);
+  registerJsonTool('Delete', deleteDescription, deleteArgsSchema, deleteAction);
+  registerJsonTool('CreateLorebook', createLorebookDescription, createLorebookArgsSchema, createLorebookAction);
+  registerJsonTool('AskUserQuestion', askUserQuestionDescription, askUserQuestionArgsSchema, askUserQuestionAction);
+  registerJsonTool('GetAttribute', getAttributeDescription, getAttributeArgsSchema, getAttributeAction);
+  registerJsonTool('SetAttribute', setAttributeDescription, setAttributeArgsSchema, setAttributeAction);
 
   return () => {
+    // 页面卸载或脚本重载时，确保工具和临时授权一并清理。
     const names = [
       'Glob',
       'Grep',

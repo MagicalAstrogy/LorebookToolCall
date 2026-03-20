@@ -2,6 +2,7 @@ import { ToolError } from '@/wtc/result';
 
 type PermissionLevel = 1 | 2 | 3;
 
+// 按世界书缓存本页会话内已授权的最高权限，避免重复弹窗。
 const permissionCache = new Map<string, PermissionLevel>();
 
 function requiredLevel(operation: 'read' | 'write' | 'delete'): PermissionLevel {
@@ -28,6 +29,7 @@ function operationText(operation: 'read' | 'write' | 'delete') {
 
 export async function ensureLorebookPermission(worldbookName: string, operation: 'read' | 'write' | 'delete') {
   const level = requiredLevel(operation);
+  // 高权限天然覆盖低权限，例如已允许 delete 时不必再次确认 read/write。
   if ((permissionCache.get(worldbookName) ?? 0) >= level) {
     return;
   }
@@ -62,6 +64,6 @@ export async function ensureLorebookPermission(worldbookName: string, operation:
 }
 
 export function resetPermissionCache() {
+  // 工具注销时清空缓存，避免把本页状态泄漏到下一次注册周期。
   permissionCache.clear();
 }
-

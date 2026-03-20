@@ -2,6 +2,7 @@ import { correctlyMerge } from '@util/common';
 import _ from 'lodash';
 import { ToolError, invalidPathDetail } from '@/wtc/result';
 
+// 兼容工具调用常见 diff 结构，只描述首个连续变更块即可满足当前需求。
 export interface StructuredPatch {
   oldStart: number;
   oldLines: number;
@@ -26,9 +27,11 @@ export interface PathIndex {
 
 type RawBook = SillyTavern.v2WorldInfoBook;
 
+// 同一本世界书上的写操作串行化，避免并发覆盖。
 const queueMap = new Map<string, Promise<void>>();
 
 export function normalizeVirtualPath(input: string): string | null {
+  // 虚拟路径按 POSIX 规则归一化，但不允许相对路径。
   if (!input.startsWith('/')) {
     return null;
   }
@@ -56,6 +59,7 @@ export function parseVirtualPath(input: string) {
   if (normalized === '/') {
     return { normalized, worldbookName: null, entryPath: null };
   }
+  // 第一段固定解释为世界书名，其余部分视为条目 comment 对应的虚拟路径。
   const [worldbookName, ...rest] = normalized.slice(1).split('/');
   return {
     normalized,
@@ -66,6 +70,7 @@ export function parseVirtualPath(input: string) {
 
 export function requireFileTarget(input: string) {
   const parsed = parseVirtualPath(input);
+  // 仅文件类工具可调用这里；根目录或世界书根路径都不算具体条目。
   if (!parsed.worldbookName || !parsed.entryPath) {
     throw new ToolError('InputValidationError', 'file_path 必须指向具体条目，而不是世界书根路径。', [
       invalidPathDetail(input),
@@ -83,6 +88,7 @@ export async function loadRawWorldbook(worldbookName: string): Promise<RawBook> 
 }
 
 export async function saveRawWorldbook(worldbookName: string, book: RawBook) {
+  // 保存后同步刷新编辑器和世界书列表，避免 UI 仍停留在旧状态。
   await SillyTavern.saveWorldInfo(worldbookName, book, true);
   SillyTavern.reloadWorldInfoEditor(worldbookName, false);
   await SillyTavern.updateWorldInfoList();
@@ -97,6 +103,7 @@ export async function withWorldbookQueue<T>(worldbookName: string, action: () =>
   const chained = previous.then(() => current);
   queueMap.set(worldbookName, chained);
 
+  // 显式等待上一次同书写操作结束，再进入当前临界区。
   await previous;
   try {
     return await action();
@@ -109,6 +116,7 @@ export async function withWorldbookQueue<T>(worldbookName: string, action: () =>
 }
 
 export function buildPathIndex(worldbookName: string, book: RawBook): PathIndex {
+  // 世界书里的 comment 被视为虚拟文件路径；同时派生目录集合和冲突集合。
   const exactFiles = new Map<string, IndexedEntry>();
   const conflicts = new Set<string>();
   const files: IndexedEntry[] = [];
@@ -127,6 +135,7 @@ export function buildPathIndex(worldbookName: string, book: RawBook): PathIndex 
       raw,
     };
     files.push(indexed);
+    // 归一化后命中同一路径即判定冲突，精确文件操作需要直接失败。
     if (exactFiles.has(normalized)) {
       conflicts.add(normalized);
     } else {
@@ -167,6 +176,7 @@ export function listCandidatesUnder(index: PathIndex, basePath: string) {
   const candidates = new Set<string>();
 
   if (normalizedBase === '/') {
+    // 根目录只暴露可被工具层识别的世界书，不处理名称里自带 / 的异常情况。
     for (const name of getWorldbookNames().filter(name => !name.includes('/'))) {
       candidates.add(`/${name}/`);
     }
@@ -193,6 +203,7 @@ export function basenameFromEntryPath(entryPath: string) {
 }
 
 export function globToRegExp(pattern: string): RegExp {
+  // 只实现当前工具需要的 *, **, ? 语义，行为接近文件系统 glob。
   let source = '^';
   for (let index = 0; index < pattern.length; index += 1) {
     const char = pattern[index];
@@ -221,6 +232,7 @@ export function globToRegExp(pattern: string): RegExp {
 }
 
 export function relativeFromBase(basePath: string, candidatePath: string) {
+  // Glob/Grep 匹配阶段统一基于相对路径做 pattern 判断。
   if (basePath === '/') {
     return candidatePath.slice(1);
   }
@@ -232,6 +244,7 @@ export function relativeFromBase(basePath: string, candidatePath: string) {
 }
 
 export function inferTypeMatches(filePath: string, requestedType?: string) {
+  // 与 ripgrep 的 type 概念保持近似即可，不追求完整语言映射表。
   if (!requestedType) {
     return true;
   }
@@ -254,6 +267,7 @@ export function createStructuredPatch(oldContent: string, newContent: string): S
   if (oldContent === newContent) {
     return [];
   }
+  // 通过公共前后缀裁剪，把一次文本替换压缩成单个 diff hunk。
   const oldLines = oldContent.split('\n');
   const newLines = newContent.split('\n');
   let prefix = 0;
@@ -276,7 +290,9 @@ export function createStructuredPatch(oldContent: string, newContent: string): S
     ...oldLines.slice(Math.max(0, prefix - 1), prefix).map(line => ` ${line}`),
     ...oldMiddle.map(line => `-${line}`),
     ...newMiddle.map(line => `+${line}`),
-    ...oldLines.slice(oldLines.length - suffix, Math.min(oldLines.length - suffix + 1, oldLines.length)).map(line => ` ${line}`),
+    ...oldLines
+      .slice(oldLines.length - suffix, Math.min(oldLines.length - suffix + 1, oldLines.length))
+      .map(line => ` ${line}`),
   ];
 
   return [
@@ -291,17 +307,17 @@ export function createStructuredPatch(oldContent: string, newContent: string): S
 }
 
 export function toCatNumberedText(content: string, offset: number, limit: number) {
+  // Read 返回类似 cat -n 的格式，方便模型后续继续定位行号。
   const lines = content.split('\n');
   const actual = limit === 0 ? lines.slice(offset) : lines.slice(offset, offset + limit);
   return {
-    content: actual
-      .map((line, index) => `${String(offset + index + 1).padStart(6, ' ')}\t${line}`)
-      .join('\n'),
+    content: actual.map((line, index) => `${String(offset + index + 1).padStart(6, ' ')}\t${line}`).join('\n'),
     numLines: actual.length,
     totalLines: lines.length,
   };
 }
 
 export function applyWorldbookPatch(entry: WorldbookEntry, patch: Record<string, unknown>): WorldbookEntry {
+  // 保持 doc 中约定的 lossy patch 语义：对象合并，数组替换，标量覆盖。
   return correctlyMerge(_.cloneDeep(entry), patch);
 }

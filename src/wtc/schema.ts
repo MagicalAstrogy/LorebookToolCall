@@ -1,5 +1,6 @@
 import { z } from 'zod';
 
+// 这里定义的 schema 同时服务于运行时参数校验和工具注册时的 JSON Schema 导出。
 export const globArgsSchema = z.object({
   pattern: z.string().min(1),
   path: z.string().optional(),
@@ -54,6 +55,8 @@ export const askUserQuestionArgsSchema = z.object({
 
 const scalarOrRegexSchema = z.string();
 
+// SetAttribute 直接复用世界书条目的字段模型，语义是 lossy patch：
+// 对象递归合并，数组整体替换，未提供字段保持原值。
 export const worldbookEntryPatchSchema: z.ZodType<any> = z
   .object({
     uid: z.number().int().optional(),
@@ -121,6 +124,7 @@ export const setAttributeArgsSchema = z.object({
 });
 
 export function validationSchemaToJson(schema: z.ZodTypeAny): Record<string, any> {
+  // SillyTavern 工具注册需要 JSON Schema，因此在注册阶段做一次转换。
   return z.toJSONSchema(schema, {
     target: 'draft-7',
   }) as Record<string, any>;

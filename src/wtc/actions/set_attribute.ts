@@ -18,6 +18,7 @@ export async function setAttributeAction(args: z.infer<typeof setAttributeArgsSc
     }
 
     let updatedEntry: WorldbookEntry | undefined;
+    // 直接在高层条目对象上应用 patch，保持字段语义与 WorldbookEntry 一致。
     await updateWorldbookWith(worldbookName, worldbook =>
       worldbook.map(entry => {
         if (entry.uid !== existing.uid) {
@@ -38,4 +39,3 @@ export async function setAttributeAction(args: z.infer<typeof setAttributeArgsSc
     };
   });
 }
-

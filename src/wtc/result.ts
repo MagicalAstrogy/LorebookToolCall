@@ -11,6 +11,7 @@ export type ToolErrorCode =
   | 'CONTENT_TOO_LARGE'
   | 'InputValidationError';
 
+// 对外错误结构统一走这个 shape，保持各工具返回协议一致。
 export interface ToolErrorDetail {
   expected: string;
   received: string;
@@ -48,6 +49,7 @@ export function toErrorResult(error: unknown): ToolErrorResult {
 
   return {
     is_error: true,
+    // 未知异常统一折叠为 tool_use_error，避免泄漏内部错误类型细节。
     errorType: 'tool_use_error',
     message: error instanceof Error ? error.message : String(error),
   };
@@ -68,4 +70,3 @@ export function invalidPathDetail(received: string, field = 'file_path'): ToolEr
     path: [field],
   };
 }
-

@@ -19,6 +19,7 @@ export async function readAction(args: z.infer<typeof readArgsSchema>) {
     ]);
   }
   if (args.limit === undefined) {
+    // 未显式限制时做一个保守上限，避免一次性把超长条目全部塞给模型。
     const projected = content.split('\n').slice(offset).join('\n');
     if (projected.length > 5000) {
       throw new ToolError('CONTENT_TOO_LARGE', '未指定 limit 时，本次读取内容超过 5000 字符。');
@@ -37,4 +38,3 @@ export async function readAction(args: z.infer<typeof readArgsSchema>) {
     },
   };
 }
-
