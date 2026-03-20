@@ -15,6 +15,7 @@ export async function editAction(args: z.infer<typeof editArgsSchema>) {
     if (occurrences === 0) {
       throw new ToolError('TEXT_NOT_FOUND', 'old_string 未在条目内容中找到。');
     }
+    // 默认只允许单次替换，避免模型在多命中时无意改坏整篇内容。
     if (occurrences > 1 && args.replace_all !== true) {
       throw new ToolError('InputValidationError', 'old_string 命中多处，请显式指定 replace_all: true。', [
         {
@@ -52,4 +53,3 @@ export async function editAction(args: z.infer<typeof editArgsSchema>) {
     };
   });
 }
-

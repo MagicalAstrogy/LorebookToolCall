@@ -20,6 +20,7 @@ export async function grepAction(args: z.infer<typeof grepArgsSchema>) {
   const basePath = normalized;
   const basePrefix = `${basePath.replace(/\/+$/, '')}/`;
   const matchedFiles = index.files.filter(file => {
+    // Grep 按目录视角工作，因此允许 path 指向某个目录或单一条目所在前缀。
     if (!file.filePath.startsWith(basePrefix) && file.filePath !== basePath) {
       return false;
     }
@@ -35,7 +36,7 @@ export async function grepAction(args: z.infer<typeof grepArgsSchema>) {
 
   const offset = args.offset ?? 0;
   const headLimit = args.head_limit ?? 0;
-  const slice = <T,>(array: T[]) => (headLimit > 0 ? array.slice(offset, offset + headLimit) : array.slice(offset));
+  const slice = <T>(array: T[]) => (headLimit > 0 ? array.slice(offset, offset + headLimit) : array.slice(offset));
 
   if (outputMode === 'files_with_matches') {
     const sliced = slice(matchedFiles);
@@ -86,4 +87,3 @@ export async function grepAction(args: z.infer<typeof grepArgsSchema>) {
     content: blocks.join('\n'),
   };
 }
-

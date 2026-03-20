@@ -6,6 +6,7 @@ import { ensureNoConflict, requireFileTarget } from '@/wtc/store';
 import { getIndexForWorldbook } from '@/wtc/actions/shared';
 
 export async function getAttributeAction(args: z.infer<typeof getAttributeArgsSchema>) {
+  // Attribute 只存在于条目节点上，不支持目录级查询。
   const { normalized, worldbookName } = requireFileTarget(args.file_path);
   await ensureLorebookPermission(worldbookName, 'read');
   const { index } = await getIndexForWorldbook(worldbookName);
@@ -24,4 +25,3 @@ export async function getAttributeAction(args: z.infer<typeof getAttributeArgsSc
     attributes,
   };
 }
-

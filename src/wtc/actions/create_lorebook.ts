@@ -4,6 +4,7 @@ import { ToolError } from '@/wtc/result';
 import { createLorebookArgsSchema } from '@/wtc/schema';
 
 export async function createLorebookAction(args: z.infer<typeof createLorebookArgsSchema>) {
+  // 世界书名包含 / 时无法映射到虚拟根目录下的单一节点，直接拒绝。
   if (args.lorebook_name.includes('/')) {
     throw new ToolError('InputValidationError', 'lorebook_name 不能包含 /。', [
       {
@@ -23,4 +24,3 @@ export async function createLorebookAction(args: z.infer<typeof createLorebookAr
     created: true,
   };
 }
-

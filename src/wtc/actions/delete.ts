@@ -14,6 +14,7 @@ export async function deleteAction(args: z.infer<typeof deleteArgsSchema>) {
     ensureNoConflict(index, normalized);
     const existing = index.exactFiles.get(normalized);
     if (!existing) {
+      // 目录类路径与文件类路径同名时，Delete 仍只按“条目文件”语义处理。
       if (index.directories.includes(`${normalized}/`)) {
         throw new ToolError('InputValidationError', 'Delete 只接受条目路径，不能删除虚拟目录。', [
           invalidPathDetail(args.file_path),
@@ -28,4 +29,3 @@ export async function deleteAction(args: z.infer<typeof deleteArgsSchema>) {
     };
   });
 }
-
