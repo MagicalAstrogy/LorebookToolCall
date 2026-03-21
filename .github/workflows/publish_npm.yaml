@@ -87,5 +87,8 @@ jobs:
         with:
           subject-path: npm-dist/*.tgz
 
+      - name: Check trusted publisher configuration
+        run: npm trust list lorebook-tool-call
+
       - name: Publish to npm
         run: npm publish ./dist/wtc --access public
