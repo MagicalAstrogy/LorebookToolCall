@@ -115,7 +115,8 @@ export function registerLorebookTools() {
   registerJsonTool('Edit', editDescription, editArgsSchema, editAction);
   registerJsonTool('Delete', deleteDescription, deleteArgsSchema, deleteAction);
   registerJsonTool('CreateLorebook', createLorebookDescription, createLorebookArgsSchema, createLorebookAction);
-  registerJsonTool('AskUserQuestion', askUserQuestionDescription, askUserQuestionArgsSchema, askUserQuestionAction);
+  //正常的对话就是问问题，所以不需要
+  //registerJsonTool('AskUserQuestion', askUserQuestionDescription, askUserQuestionArgsSchema, askUserQuestionAction);
   registerJsonTool('GetAttribute', getAttributeDescription, getAttributeArgsSchema, getAttributeAction);
   registerJsonTool('SetAttribute', setAttributeDescription, setAttributeArgsSchema, setAttributeAction);
 

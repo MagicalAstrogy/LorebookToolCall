@@ -27,6 +27,33 @@ function operationText(operation: 'read' | 'write' | 'delete') {
   }
 }
 
+function downloadBackup(content: string, fileName: string, contentType: string) {
+  const globalDownload = (window as typeof window & { download?: (content: string, fileName: string, contentType: string) => void })
+    .download;
+
+  if (typeof globalDownload === 'function') {
+    globalDownload(content, fileName, contentType);
+    return;
+  }
+
+  const blob = new Blob([content], { type: contentType });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = fileName;
+  anchor.click();
+  URL.revokeObjectURL(url);
+}
+
+async function backupLorebook(worldbookName: string) {
+  const data = await SillyTavern.loadWorldInfo(worldbookName);
+  if (!data) {
+    throw new ToolError('WORLD_NOT_FOUND', `世界书 '${worldbookName}' 不存在，无法备份。`);
+  }
+
+  downloadBackup(JSON.stringify(data), `${worldbookName}.json`, 'application/json');
+}
+
 export async function ensureLorebookPermission(worldbookName: string, operation: 'read' | 'write' | 'delete') {
   const level = requiredLevel(operation);
   // 高权限天然覆盖低权限，例如已允许 delete 时不必再次确认 read/write。
@@ -47,12 +74,26 @@ export async function ensureLorebookPermission(worldbookName: string, operation:
           result: SillyTavern.POPUP_RESULT.CUSTOM1,
           appendAtEnd: true,
         },
+        ...(operation === 'write'
+          ? [
+              {
+                text: `备份 '/${worldbookName}' 并始终允许`,
+                result: SillyTavern.POPUP_RESULT.CUSTOM2,
+                appendAtEnd: true,
+              },
+            ]
+          : []),
       ],
       wider: true,
     },
   );
 
   if (result === SillyTavern.POPUP_RESULT.CUSTOM1) {
+    permissionCache.set(worldbookName, level);
+    return;
+  }
+  if (result === SillyTavern.POPUP_RESULT.CUSTOM2) {
+    await backupLorebook(worldbookName);
     permissionCache.set(worldbookName, level);
     return;
   }
