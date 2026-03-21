@@ -109,7 +109,7 @@ function cleanupMessage(messageId: number) {
     }
   }
 }
-
+//
 function rerenderMessage(messageId: number) {
   cleanupMessage(messageId);
   const invocations = SillyTavern.chat[messageId]?.extra?.tool_invocations;
