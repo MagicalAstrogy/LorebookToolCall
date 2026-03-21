@@ -16,17 +16,17 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Use Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: 22
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4.1.0
-        with:
-          version: 10
+          cache: yarn
+          cache-dependency-path: yarn.lock
+      - name: Enable Corepack
+        run: corepack enable
 
       - run: |-
-          pnpm update
-          pnpm install --lockfile-only
+          yarn up -R
+          yarn install --mode=skip-build
 
       - run: |-
           rm -rf @types
@@ -39,18 +39,18 @@ jobs:
           rm -f tavern_sync.mjs
           wget https://raw.githubusercontent.com/StageDog/tavern_sync/refs/heads/main/dist/tavern_sync.mjs
 
-      - name: Check if only pnpm-lock.yaml is changed
+      - name: Check if only yarn.lock is changed
         id: should_commit
         run: |-
           export changed_files=$(git diff --name-only HEAD | grep -v '^$')
           export num_changed_files=$(echo "$changed_files" | wc -l)
-          if [ "$num_changed_files" -eq 1 ] && [ "$changed_files" = "pnpm-lock.yaml" ]; then
+          if [ "$num_changed_files" -eq 1 ] && [ "$changed_files" = "yarn.lock" ]; then
             echo "result=false" >> "$GITHUB_OUTPUT"
           else
             echo "result=true" >> "$GITHUB_OUTPUT"
           fi
         shell: bash
-      - name: Commit if not only pnpm-lock.yaml is changed
+      - name: Commit if not only yarn.lock is changed
         if: steps.should_commit.outputs.result == 'true'
         uses: EndBug/add-and-commit@v9.1.3
         with:
