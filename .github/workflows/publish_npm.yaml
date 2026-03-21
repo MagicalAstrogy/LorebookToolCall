@@ -88,6 +88,4 @@ jobs:
           subject-path: npm-dist/*.tgz
 
       - name: Publish to npm
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: npm publish ./dist/wtc --provenance --access public
+        run: npm publish ./dist/wtc --access public
