@@ -1,4 +1,4 @@
-import { editAction } from '../src/wtc/actions/edit';
+import { editAction, editRollback } from '../src/wtc/actions/edit';
 import { resetPermissionCache } from '../src/wtc/permission';
 import { buildBook, installMockSillyTavern } from './helpers/mock_sillytavern';
 import { expectToolError } from './helpers/tool_assert';
@@ -29,6 +29,14 @@ describe('editAction', () => {
       userModified: false,
       replaceAll: false,
     });
+    expect(result.backup).toMatchObject({
+      rollbackMethod: 'editRollback',
+      worldbookName: '设定集',
+      filePath: '/设定集/正文',
+      uid: 1,
+      originalContent: 'hello world',
+    });
+    expect(result.originalFileNotice).toBeUndefined();
     expect(result.structuredPatch).toHaveLength(1);
   });
 
@@ -67,5 +75,41 @@ describe('editAction', () => {
     );
 
     expect(error.errorType).toBe('TEXT_NOT_FOUND');
+  });
+
+  test('omits originalFile and returns a notice when original content is too large', async () => {
+    const oversizedContent = `${'a\n'.repeat(2500)}TAIL`;
+    installMockSillyTavern({
+      books: {
+        设定集: buildBook([{ id: 1, comment: '正文', content: oversizedContent }]),
+      },
+    });
+
+    const result = await editAction({
+      file_path: '/设定集/正文',
+      old_string: 'TAIL',
+      new_string: 'DONE',
+    });
+
+    expect(result.originalFile).toBeNull();
+    expect(result.originalFileNotice).toMatch(/5000 字符/);
+    expect(result.structuredPatch).toHaveLength(1);
+  });
+
+  test('rolls back edited content using backup', async () => {
+    const mock = installMockSillyTavern({
+      books: {
+        设定集: buildBook([{ id: 1, comment: '正文', content: 'hello world' }]),
+      },
+    });
+
+    const result = await editAction({
+      file_path: '/设定集/正文',
+      old_string: 'world',
+      new_string: 'jest',
+    });
+    await editRollback(result.backup);
+
+    expect(mock.worldbooks.get('设定集')?.[0]?.content).toBe('hello world');
   });
 });

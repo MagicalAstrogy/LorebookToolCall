@@ -5,6 +5,46 @@ import { editArgsSchema } from '@/wtc/schema';
 import { createStructuredPatch, ensureNoConflict, requireFileTarget, withWorldbookQueue } from '@/wtc/store';
 import { getIndexForWorldbook, readEntryContent } from '@/wtc/actions/shared';
 
+const MAX_INLINE_ORIGINAL_FILE_LENGTH = 5000;
+
+export type EditBackup = {
+  rollbackMethod: 'editRollback';
+  worldbookName: string;
+  filePath: string;
+  uid: number;
+  originalContent: string;
+};
+
+/**
+ * 回滚方式：
+ * 将本次 `editAction()` 返回的 `backup` 原样传给 `editRollback()`，
+ * 它会直接把条目内容恢复到编辑前的完整文本。
+ */
+export async function editRollback(backup: EditBackup) {
+  await ensureLorebookPermission(backup.worldbookName, 'write');
+  return withWorldbookQueue(backup.worldbookName, async () => {
+    await updateWorldbookWith(backup.worldbookName, worldbook => {
+      let found = false;
+      const restored = worldbook.map(entry => {
+        if (entry.uid !== backup.uid) {
+          return entry;
+        }
+        found = true;
+        return { ...entry, content: backup.originalContent };
+      });
+      if (!found) {
+        throw new ToolError('ENTRY_NOT_FOUND', `条目 '${backup.filePath}' 不存在，无法回滚编辑操作。`);
+      }
+      return restored;
+    });
+
+    return {
+      filePath: backup.filePath,
+      rolledBack: true,
+    };
+  });
+}
+
 export async function editAction(args: z.infer<typeof editArgsSchema>) {
   const { normalized, worldbookName } = requireFileTarget(args.file_path);
   await ensureLorebookPermission(worldbookName, 'write');
@@ -42,14 +82,25 @@ export async function editAction(args: z.infer<typeof editArgsSchema>) {
       worldbook.map(entry => (entry.uid === existing.uid ? { ...entry, content: updated } : entry)),
     );
 
+    const originalFileTooLarge = original.length > MAX_INLINE_ORIGINAL_FILE_LENGTH;
     return {
       filePath: normalized,
       oldString: args.old_string,
       newString: args.new_string,
-      originalFile: original,
+      originalFile: originalFileTooLarge ? null : original,
+      originalFileNotice: originalFileTooLarge
+        ? `原始内容超过 ${MAX_INLINE_ORIGINAL_FILE_LENGTH} 字符，未直接返回。`
+        : undefined,
       structuredPatch: createStructuredPatch(original, updated),
       userModified: false,
       replaceAll: args.replace_all === true,
+      backup: {
+        rollbackMethod: 'editRollback' as const,
+        worldbookName,
+        filePath: normalized,
+        uid: existing.uid,
+        originalContent: original,
+      },
     };
   });
 }

@@ -94,6 +94,14 @@ export async function saveRawWorldbook(worldbookName: string, book: RawBook) {
   await SillyTavern.updateWorldInfoList();
 }
 
+export function getRawBookEntries(book: RawBook): SillyTavern.v2DataWorldInfoEntry[] {
+  return _.toArray(book.entries);
+}
+
+export function findRawBookEntry(book: RawBook, predicate: (entry: SillyTavern.v2DataWorldInfoEntry) => boolean) {
+  return getRawBookEntries(book).find(predicate);
+}
+
 export async function withWorldbookQueue<T>(worldbookName: string, action: () => Promise<T>): Promise<T> {
   const previous = queueMap.get(worldbookName) ?? Promise.resolve();
   let release!: () => void;
@@ -122,7 +130,7 @@ export function buildPathIndex(worldbookName: string, book: RawBook): PathIndex 
   const files: IndexedEntry[] = [];
   const directories = new Set<string>([`/${worldbookName}/`]);
 
-  for (const raw of book.entries) {
+  for (const raw of getRawBookEntries(book)) {
     const normalized = normalizeVirtualPath(`/${worldbookName}/${raw.comment ?? ''}`);
     if (!normalized || normalized === `/${worldbookName}`) {
       continue;
@@ -131,7 +139,8 @@ export function buildPathIndex(worldbookName: string, book: RawBook): PathIndex 
     const indexed: IndexedEntry = {
       filePath: normalized,
       entryPath,
-      uid: raw.id,
+      //@ts-expect-error 这里类型定义是错误的
+      uid: raw.uid,
       raw,
     };
     files.push(indexed);
@@ -208,6 +217,12 @@ export function globToRegExp(pattern: string): RegExp {
   for (let index = 0; index < pattern.length; index += 1) {
     const char = pattern[index];
     const next = pattern[index + 1];
+    const afterNext = pattern[index + 2];
+    if (char === '*' && next === '*' && afterNext === '/') {
+      source += '(?:.*/)?';
+      index += 2;
+      continue;
+    }
     if (char === '*') {
       if (next === '*') {
         source += '.*';

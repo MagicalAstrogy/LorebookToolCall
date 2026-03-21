@@ -11,8 +11,37 @@ import {
 } from '@/wtc/store';
 import { getIndexForWorldbook } from '@/wtc/actions/shared';
 
+function resolveGlobInputs(args: z.infer<typeof globArgsSchema>) {
+  if (args.path) {
+    return {
+      basePath: normalizeVirtualPath(args.path),
+      pattern: args.pattern,
+    };
+  }
+
+  if (!args.pattern.startsWith('/')) {
+    return {
+      basePath: normalizeVirtualPath('/'),
+      pattern: args.pattern,
+    };
+  }
+
+  const parsed = parseVirtualPath(args.pattern);
+  if (!parsed.worldbookName) {
+    return {
+      basePath: parsed.normalized,
+      pattern: '*',
+    };
+  }
+
+  return {
+    basePath: `/${parsed.worldbookName}`,
+    pattern: parsed.entryPath ?? '*',
+  };
+}
+
 export async function globAction(args: z.infer<typeof globArgsSchema>) {
-  const basePath = normalizeVirtualPath(args.path ?? '/');
+  const { basePath, pattern: rawPattern } = resolveGlobInputs(args);
   if (!basePath) {
     throw new ToolError('InputValidationError', 'path 必须是绝对路径。', [
       invalidPathDetail(String(args.path), 'path'),
@@ -35,7 +64,7 @@ export async function globAction(args: z.infer<typeof globArgsSchema>) {
   }
 
   // 目录结果会保留尾斜杠，仅用于返回值中的去歧义展示。
-  const pattern = globToRegExp(args.pattern);
+  const pattern = globToRegExp(rawPattern);
   const matched = filenames.filter(candidate => {
     const relative = relativeFromBase(basePath, candidate).replace(/\/$/, '');
     return pattern.test(relative);

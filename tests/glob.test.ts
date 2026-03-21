@@ -47,6 +47,26 @@ describe('globAction', () => {
     });
   });
 
+  test('matches top-level and nested entries for **/* under hyphenated lorebook names', async () => {
+    installMockSillyTavern({
+      books: {
+        '-SnowYuki': buildBook([
+          { id: 1, comment: 'README', content: '根目录文件' },
+          { id: 2, comment: 'Folder/Nested', content: '嵌套文件' },
+        ]),
+      },
+    });
+
+    const result = await globAction({ path: '/-SnowYuki', pattern: '**/*' });
+
+    expect(result).toStrictEqual({
+      filenames: ['/-SnowYuki/Folder', '/-SnowYuki/Folder/', '/-SnowYuki/Folder/Nested', '/-SnowYuki/README'],
+      durationMs: 0,
+      numFiles: 4,
+      truncated: false,
+    });
+  });
+
   test('rejects non-absolute path', async () => {
     installMockSillyTavern();
 

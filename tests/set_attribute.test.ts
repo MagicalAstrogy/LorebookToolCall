@@ -1,4 +1,4 @@
-import { setAttributeAction } from '../src/wtc/actions/set_attribute';
+import { setAttributeAction, setAttributeRollback } from '../src/wtc/actions/set_attribute';
 import { resetPermissionCache } from '../src/wtc/permission';
 import { buildBook, installMockSillyTavern } from './helpers/mock_sillytavern';
 import { expectToolError } from './helpers/tool_assert';
@@ -54,7 +54,56 @@ describe('setAttributeAction', () => {
     expect(result.attributes.strategy.type).toBe('selective');
     expect(result.attributes.position.depth).toBe(4);
     expect(result.attributes.position.order).toBe(10);
+    expect(result.attributes).not.toHaveProperty('content');
+    expect(result.attributes).not.toHaveProperty('comment');
+    expect(result.backup).toMatchObject({
+      rollbackMethod: 'setAttributeRollback',
+      worldbookName: '设定集',
+      filePath: '/设定集/正文',
+      uid: 1,
+    });
+    expect(result.backup.previousEntry.enabled).toBe(true);
+    expect(result.backup.previousEntry.content).toBe('内容');
     expect(mock.worldbooks.get('设定集')?.[0]?.position.depth).toBe(4);
+  });
+
+  test('rolls back patched attributes using backup', async () => {
+    const mock = installMockSillyTavern({
+      books: {
+        设定集: buildBook([
+          {
+            id: 1,
+            comment: '正文',
+            content: '内容',
+            attributes: {
+              enabled: true,
+              probability: 42,
+              position: {
+                type: 'at_depth',
+                role: 'system',
+                depth: 1,
+                order: 10,
+              },
+            },
+          },
+        ]),
+      },
+    });
+
+    const result = await setAttributeAction({
+      file_path: '/设定集/正文',
+      attributes: {
+        enabled: false,
+        position: {
+          depth: 4,
+        },
+      },
+    });
+    await setAttributeRollback(result.backup);
+
+    expect(mock.worldbooks.get('设定集')?.[0]?.enabled).toBe(true);
+    expect(mock.worldbooks.get('设定集')?.[0]?.position.depth).toBe(1);
+    expect(mock.worldbooks.get('设定集')?.[0]?.content).toBe('内容');
   });
 
   test('returns ENTRY_NOT_FOUND for missing entry', async () => {

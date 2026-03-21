@@ -111,16 +111,5 @@
     "yaml": "^2.8.2",
     "zod": "^4.3.6"
   },
-  "pnpm": {
-    "onlyBuiltDependencies": [
-      "@parcel/watcher",
-      "@tailwindcss/oxide",
-      "electron",
-      "esbuild",
-      "javascript-obfuscator",
-      "unrs-resolver",
-      "vue-demi"
-    ]
-  },
-  "packageManager": "pnpm@10.11.1+sha1.82b5e196a3201a1871fce7461b3bdf8742486168"
+  "packageManager": "yarn@4.13.0"
 }

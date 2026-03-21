@@ -29,6 +29,8 @@ describe('getAttributeAction', () => {
     expect(result.attributes.enabled).toBe(false);
     expect(result.attributes.probability).toBe(42);
     expect(result.attributes.position.depth).toBe(3);
+    expect(result.attributes).not.toHaveProperty('content');
+    expect(result.attributes).not.toHaveProperty('comment');
   });
 
   test('returns ENTRY_NOT_FOUND for missing path', async () => {

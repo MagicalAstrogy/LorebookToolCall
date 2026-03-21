@@ -5,6 +5,14 @@ import { getAttributeArgsSchema } from '@/wtc/schema';
 import { ensureNoConflict, requireFileTarget } from '@/wtc/store';
 import { getIndexForWorldbook } from '@/wtc/actions/shared';
 
+type ReturnedAttributes = Omit<WorldbookEntry, 'content'> & { comment?: never };
+
+function sanitizeReturnedAttributes(attributes: WorldbookEntry): ReturnedAttributes {
+  const { content: _content, ...rest } = attributes as WorldbookEntry & { comment?: string };
+  delete (rest as { comment?: string }).comment;
+  return rest as ReturnedAttributes;
+}
+
 export async function getAttributeAction(args: z.infer<typeof getAttributeArgsSchema>) {
   // Attribute 只存在于条目节点上，不支持目录级查询。
   const { normalized, worldbookName } = requireFileTarget(args.file_path);
@@ -22,6 +30,6 @@ export async function getAttributeAction(args: z.infer<typeof getAttributeArgsSc
   }
   return {
     filePath: normalized,
-    attributes,
+    attributes: sanitizeReturnedAttributes(attributes),
   };
 }

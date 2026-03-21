@@ -47,6 +47,10 @@ function shouldRegisterTools() {
   return SillyTavern.isToolCallingSupported() && SillyTavern.canPerformToolCalls('function');
 }
 
+function delay(ms: number) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
 function registerJsonTool<T>(
   name: string,
   description: string,
@@ -66,6 +70,8 @@ function registerJsonTool<T>(
       let result: any = undefined;
       try {
         const args = parseArgs(schema, rawArgs);
+        //避开 酒馆dry run的 generation？
+        await delay(1500);
         result = await action(args);
       } catch (error) {
         result = toErrorResult(error);
@@ -80,7 +86,7 @@ function registerJsonTool<T>(
 }
 
 const globDescription =
-  'Fast file pattern matching tool that works with any codebase size\n- Supports glob patterns like "/${LorebookName}/[mvu_update]*" or "/${LorebookName}/*"\n- Returns matching file paths sorted by modification time\n- Use this tool when you need to find files by name patterns\n- When you are doing an open ended search that may require multiple rounds of globbing and grepping, use the Agent tool instead\n- You can call multiple tools in a single response. It is always better to speculatively perform multiple searches in parallel if they are potentially useful.';
+  'Fast file pattern matching tool that works with any codebase size\n- Prefer passing `path` as the base directory and `pattern` as a relative glob, for example `path: "/${LorebookName}"` with `pattern: "*"`\n- If you omit `path`, this tool also accepts absolute-style patterns like "/${LorebookName}/[mvu_update]*" or "/${LorebookName}/*" and will automatically split the lorebook name into `path`\n- Returns matching file paths sorted by modification time\n- Use this tool when you need to find files by name patterns\n- When you are doing an open ended search that may require multiple rounds of globbing and grepping, use the Agent tool instead\n- You can call multiple tools in a single response. It is always better to speculatively perform multiple searches in parallel if they are potentially useful.';
 const grepDescription =
   'A powerful search tool built on ripgrep\n\n  Usage:\n  - ALWAYS use Grep for search tasks. NEVER invoke `grep` or `rg` as a Bash command. The Grep tool has been optimized for correct permissions and access.\n  - Supports full regex syntax (e.g., "log.*Error", "function\\s+\\w+")\n  - Filter files with glob parameter (e.g., "/${LorebookName}/*", "/${LorebookName}/[mvu_update]*")\n  - Output modes: "content" shows matching lines, "files_with_matches" shows only file paths (default), "count" shows match counts\n  - Use Agent tool for open-ended searches requiring multiple rounds\n  - Pattern syntax: Uses ripgrep (not grep) - literal braces need escaping (use `interface\\{\\}` to find `interface{}` in Go code)\n  - Multiline matching: By default patterns match within single lines only. For cross-line patterns like `struct \\{[\\s\\S]*?field`, use `multiline: true`\n';
 const readDescription =

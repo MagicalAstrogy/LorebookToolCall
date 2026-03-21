@@ -128,7 +128,7 @@ export function extractReasoningDetails(
   return undefined;
 }
 
-function parseReasoningDetailsFromContent(content: unknown): {
+export function sanitizeToolMessageContent(content: unknown): {
   sanitizedContent?: string;
   reasoningDetails?: ReasoningDetail[];
 } {
@@ -137,16 +137,29 @@ function parseReasoningDetailsFromContent(content: unknown): {
   }
 
   try {
-    const parsed = JSON.parse(content) as Record<string, unknown>;
-    const reasoningDetails = Array.isArray(parsed.reasoning_details)
-      ? parsed.reasoning_details.filter(isReasoningDetail)
-      : undefined;
-    if (!reasoningDetails || reasoningDetails.length === 0) {
+    const parsed = JSON.parse(content) as unknown;
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
       return {};
     }
-    delete parsed.reasoning_details;
+
+    let sanitized = false;
+    const record = parsed as Record<string, unknown>;
+    const reasoningDetails = Array.isArray(record.reasoning_details)
+      ? record.reasoning_details.filter(isReasoningDetail)
+      : undefined;
+    if (reasoningDetails && reasoningDetails.length > 0) {
+      delete record.reasoning_details;
+      sanitized = true;
+    }
+    if ('backup' in record) {
+      delete record.backup;
+      sanitized = true;
+    }
+    if (!sanitized) {
+      return {};
+    }
     return {
-      sanitizedContent: JSON.stringify(parsed),
+      sanitizedContent: JSON.stringify(record),
       reasoningDetails,
     };
   } catch {
@@ -173,7 +186,7 @@ function findAssistantMessage(messages: GeneratedMessage[], endIndex: number, to
   return undefined;
 }
 
-function onGeneratedReady(data: GeneratedReadyPayload) {
+export function onGeneratedReady(data: GeneratedReadyPayload) {
   /**
    * data的内容（去掉了无关部分）
    * {
@@ -214,12 +227,14 @@ function onGeneratedReady(data: GeneratedReadyPayload) {
       continue;
     }
 
-    const { sanitizedContent, reasoningDetails } = parseReasoningDetailsFromContent(message.content);
+    const { sanitizedContent, reasoningDetails } = sanitizeToolMessageContent(message.content);
+    if (sanitizedContent !== undefined) {
+      message.content = sanitizedContent;
+    }
+
     if (!reasoningDetails || reasoningDetails.length === 0) {
       continue;
     }
-
-    message.content = sanitizedContent;
 
     const assistantMatch = findAssistantMessage(data.messages, index, message.tool_call_id);
     if (!assistantMatch) {
