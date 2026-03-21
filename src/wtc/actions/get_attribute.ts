@@ -1,16 +1,16 @@
 import type { z } from 'zod';
 import { ensureLorebookPermission } from '@/wtc/permission';
 import { ToolError } from '@/wtc/result';
-import { getAttributeArgsSchema } from '@/wtc/schema';
+import { encodeWorldbookEntryPatchSpecialValues, getAttributeArgsSchema } from '@/wtc/schema';
 import { ensureNoConflict, requireFileTarget } from '@/wtc/store';
 import { getIndexForWorldbook } from '@/wtc/actions/shared';
 
-type ReturnedAttributes = Omit<WorldbookEntry, 'content'> & { comment?: never };
+type ReturnedAttributes = Record<string, unknown> & { comment?: never; content?: never };
 
 function sanitizeReturnedAttributes(attributes: WorldbookEntry): ReturnedAttributes {
   const { content: _content, ...rest } = attributes as WorldbookEntry & { comment?: string };
   delete (rest as { comment?: string }).comment;
-  return rest as ReturnedAttributes;
+  return encodeWorldbookEntryPatchSpecialValues(rest as Record<string, unknown>) as ReturnedAttributes;
 }
 
 export async function getAttributeAction(args: z.infer<typeof getAttributeArgsSchema>) {

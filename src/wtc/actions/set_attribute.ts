@@ -1,18 +1,18 @@
 import type { z } from 'zod';
 import { ensureLorebookPermission } from '@/wtc/permission';
 import { ToolError } from '@/wtc/result';
-import { setAttributeArgsSchema } from '@/wtc/schema';
+import { decodeWorldbookEntryPatchSpecialValues, encodeWorldbookEntryPatchSpecialValues, setAttributeArgsSchema } from '@/wtc/schema';
 import { applyWorldbookPatch, ensureNoConflict, requireFileTarget, withWorldbookQueue } from '@/wtc/store';
 import { getIndexForWorldbook } from '@/wtc/actions/shared';
 
-type ReturnedAttributes = Omit<WorldbookEntry, 'content'> & { comment?: never };
+type ReturnedAttributes = Record<string, unknown> & { comment?: never; content?: never };
 type DeleteMarker = { __delete: true };
 type RollbackPatch = Record<string, unknown>;
 
 function sanitizeReturnedAttributes(attributes: WorldbookEntry): ReturnedAttributes {
   const { content: _content, ...rest } = attributes as WorldbookEntry & { comment?: string };
   delete (rest as { comment?: string }).comment;
-  return rest as ReturnedAttributes;
+  return encodeWorldbookEntryPatchSpecialValues(rest as Record<string, unknown>) as ReturnedAttributes;
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
@@ -131,6 +131,7 @@ export async function setAttributeRollback(backup: SetAttributeBackup) {
 
 export async function setAttributeAction(args: z.infer<typeof setAttributeArgsSchema>) {
   const { normalized, worldbookName } = requireFileTarget(args.file_path);
+  const normalizedAttributes = decodeWorldbookEntryPatchSpecialValues(args.attributes);
   await ensureLorebookPermission(worldbookName, 'write');
 
   return withWorldbookQueue(worldbookName, async () => {
@@ -150,7 +151,7 @@ export async function setAttributeAction(args: z.infer<typeof setAttributeArgsSc
           return entry;
         }
         previousEntry = structuredClone(entry);
-        updatedEntry = applyWorldbookPatch(entry, args.attributes);
+        updatedEntry = applyWorldbookPatch(entry, normalizedAttributes);
         return updatedEntry;
       }),
     );
@@ -167,7 +168,7 @@ export async function setAttributeAction(args: z.infer<typeof setAttributeArgsSc
         worldbookName,
         filePath: normalized,
         uid: existing.uid,
-        rollbackPatch: buildRollbackPatchFromPrevious(args.attributes, previousEntry),
+        rollbackPatch: buildRollbackPatchFromPrevious(normalizedAttributes, previousEntry),
       },
     };
   });

@@ -82,6 +82,57 @@ export const askUserQuestionArgsSchema = z
 
 const scalarOrRegexSchema = z.string().describe('关键字项，使用字符串形式表示；可以是普通文本，也可以是正则表达式的字符串表示。');
 
+export const WORLDBOOK_ENTRY_PATCH_SCAN_DEPTH_SAME_AS_GLOBAL = 0;
+export const WORLDBOOK_ENTRY_PATCH_NULL_SENTINEL = 0;
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return Object.prototype.toString.call(value) === '[object Object]';
+}
+
+export function decodeWorldbookEntryPatchSpecialValues(patch: Record<string, unknown>): Record<string, unknown> {
+  const normalized = structuredClone(patch);
+
+  if (isPlainObject(normalized.strategy) && normalized.strategy.scan_depth === WORLDBOOK_ENTRY_PATCH_SCAN_DEPTH_SAME_AS_GLOBAL) {
+    normalized.strategy.scan_depth = 'same_as_global';
+  }
+
+  if (isPlainObject(normalized.recursion) && normalized.recursion.delay_until === WORLDBOOK_ENTRY_PATCH_NULL_SENTINEL) {
+    normalized.recursion.delay_until = null;
+  }
+
+  if (isPlainObject(normalized.effect)) {
+    for (const key of ['sticky', 'cooldown', 'delay'] as const) {
+      if (normalized.effect[key] === WORLDBOOK_ENTRY_PATCH_NULL_SENTINEL) {
+        normalized.effect[key] = null;
+      }
+    }
+  }
+
+  return normalized;
+}
+
+export function encodeWorldbookEntryPatchSpecialValues(attributes: Record<string, unknown>): Record<string, unknown> {
+  const normalized = structuredClone(attributes);
+
+  if (isPlainObject(normalized.strategy) && normalized.strategy.scan_depth === 'same_as_global') {
+    normalized.strategy.scan_depth = WORLDBOOK_ENTRY_PATCH_SCAN_DEPTH_SAME_AS_GLOBAL;
+  }
+
+  if (isPlainObject(normalized.recursion) && normalized.recursion.delay_until === null) {
+    normalized.recursion.delay_until = WORLDBOOK_ENTRY_PATCH_NULL_SENTINEL;
+  }
+
+  if (isPlainObject(normalized.effect)) {
+    for (const key of ['sticky', 'cooldown', 'delay'] as const) {
+      if (normalized.effect[key] === null) {
+        normalized.effect[key] = WORLDBOOK_ENTRY_PATCH_NULL_SENTINEL;
+      }
+    }
+  }
+
+  return normalized;
+}
+
 // SetAttribute 直接复用世界书条目的字段模型，语义是 lossy patch：
 // 对象递归合并，数组整体替换，未提供字段保持原值。
 export const worldbookEntryPatchSchema: z.ZodType<any> = z
@@ -95,24 +146,35 @@ export const worldbookEntryPatchSchema: z.ZodType<any> = z
           .enum(['constant', 'selective', 'vectorized'])
           .optional()
           .describe('激活策略类型：constant 为常量蓝灯，selective 为关键字绿灯，vectorized 为向量化。'),
-        keys: z.array(scalarOrRegexSchema).optional().describe('主要关键字。selective 条目至少命中其中一个关键字才会激活。'),
+        keys: z
+          .array(scalarOrRegexSchema)
+          .optional()
+          .describe('主要关键字。selective 条目至少命中其中一个关键字才会激活。'),
         keys_secondary: z
           .object({
             logic: z
               .enum(['and_any', 'and_all', 'not_all', 'not_any'])
               .optional()
               .describe('次要关键字的匹配逻辑：and_any、and_all、not_all、not_any。'),
-            keys: z.array(scalarOrRegexSchema).optional().describe('次要关键字列表。若非空，则在主要关键字命中的基础上继续按 logic 判断。'),
+            keys: z
+              .array(scalarOrRegexSchema)
+              .optional()
+              .describe('次要关键字列表。若非空，则在主要关键字命中的基础上继续按 logic 判断。'),
           })
           .describe('次要关键字规则。')
           .optional(),
         scan_depth: z
-          .union([z.literal('same_as_global'), z.number().int()])
+          .number()
+          .int()
+          .nonnegative()
           .optional()
-          .describe('扫描深度。"same_as_global" 表示继承全局设置；数字 1 表示只扫描最后一条消息，2 表示最后两条，以此类推。'),
+          .describe(
+            `扫描深度。传 ${WORLDBOOK_ENTRY_PATCH_SCAN_DEPTH_SAME_AS_GLOBAL} 表示继承全局设置；1 表示只扫描最后一条消息，2 表示最后两条，以此类推。`,
+          ),
       })
       .describe('条目的激活策略：决定条目在何时被触发。')
       .optional(),
+
     position: z
       .object({
         type: z
@@ -142,19 +204,40 @@ export const worldbookEntryPatchSchema: z.ZodType<any> = z
       .object({
         prevent_incoming: z.boolean().optional().describe('禁止其他条目通过递归激活本条目。'),
         prevent_outgoing: z.boolean().optional().describe('禁止本条目通过递归激活其他条目。'),
-        delay_until: z.union([z.number().int(), z.null()]).optional().describe('延迟到第 n 级递归检查时才能激活；null 表示不延迟。'),
+        delay_until: z
+          .number()
+          .int()
+          .nonnegative()
+          .optional()
+          .describe(`延迟到第 n 级递归检查时才能激活；传 ${WORLDBOOK_ENTRY_PATCH_NULL_SENTINEL} 表示不延迟。`),
       })
       .describe('递归控制：约束条目之间的递归激活行为。')
       .optional(),
     effect: z
       .object({
-        sticky: z.union([z.number().int(), z.null()]).optional().describe('黏性效果：条目激活后，在之后 n 条消息内持续激活；null 表示关闭。'),
-        cooldown: z.union([z.number().int(), z.null()]).optional().describe('冷却效果：条目激活后，在之后 n 条消息内不能再次激活；null 表示关闭。'),
-        delay: z.union([z.number().int(), z.null()]).optional().describe('延迟效果：聊天至少有 n 条消息后条目才允许激活；null 表示关闭。'),
+        sticky: z
+          .number()
+          .int()
+          .nonnegative()
+          .optional()
+          .describe(`黏性效果：条目激活后，在之后 n 条消息内持续激活；传 ${WORLDBOOK_ENTRY_PATCH_NULL_SENTINEL} 表示关闭。`),
+        cooldown: z
+          .number()
+          .int()
+          .nonnegative()
+          .optional()
+          .describe(`冷却效果：条目激活后，在之后 n 条消息内不能再次激活；传 ${WORLDBOOK_ENTRY_PATCH_NULL_SENTINEL} 表示关闭。`),
+        delay: z
+          .number()
+          .int()
+          .nonnegative()
+          .optional()
+          .describe(`延迟效果：聊天至少有 n 条消息后条目才允许激活；传 ${WORLDBOOK_ENTRY_PATCH_NULL_SENTINEL} 表示关闭。`),
       })
       .describe('激活效果：控制黏性、冷却和聊天轮次延迟。')
       .optional(),
     extra: z.record(z.string(), z.any()).optional().describe('绑定在条目上的额外自定义字段。'),
+
   })
   .describe('WorldbookEntry 的 lossy patch 版本：对象递归合并、数组整体替换、未提供字段保持原值。')
   .strict();
@@ -177,6 +260,6 @@ export const setAttributeArgsSchema = z
 export function validationSchemaToJson(schema: z.ZodTypeAny): Record<string, any> {
   // SillyTavern 工具注册需要 JSON Schema，因此在注册阶段做一次转换。
   return z.toJSONSchema(schema, {
-    target: 'draft-7',
+    target: 'draft-2020-12',
   }) as Record<string, any>;
 }
