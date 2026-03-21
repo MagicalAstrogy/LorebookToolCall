@@ -10,11 +10,14 @@
 
 注2：目前验证支持的写卡预设有 [明月秋青](https://discord.com/channels/1134557553011998840/1436581369558994974)
 
+原则上建议使用 1.16.0 以上版本的酒馆。
+
 ## 相关的工作
 在类似的领域，其他创作者也同样在为着更顺畅的编写体验而做着努力，你也可以去关注一下他们的项目：
- - 通过MCP 和 CLI 帮助 agent 编写角色卡(@shiyue110) [链接](https://github.com/shiyue137mh-netizen/CharacterCard_Studio)
- - 本地完善的制卡环境 (@青空莉) [链接](https://stagedog.github.io/%E9%9D%92%E7%A9%BA%E8%8E%89/%E5%86%99%E5%8D%A1%E5%BB%BA%E8%AE%AE/)
- - 世界书编辑插件(Lucker) (@funnycups) [链接](https://github.com/funnycups/Luker)
+- 本地完善的制卡环境 (@青空莉) [链接](https://stagedog.github.io/%E9%9D%92%E7%A9%BA%E8%8E%89/%E5%86%99%E5%8D%A1%E5%BB%BA%E8%AE%AE/)
+- 通过MCP 和 CLI 帮助 agent 编写角色卡(@shiyue110) [链接](https://github.com/shiyue137mh-netizen/CharacterCard_Studio)
+- 世界书编辑插件(Lucker) (@funnycups) [链接](https://github.com/funnycups/Luker)
+- 独立制卡前端(欢欢卡站) [链接](https://huan.huan.baby/)
 
 ## 安全性说明
 这个项目运行中可能会对当前酒馆上下文的任意世界书进行读取/写入。对于读取/写入，均会弹出权限允许框，如果您拒绝，将不会有具体的修改被应用，
@@ -22,6 +25,8 @@
 
 ## 已知问题
 部分情况下可能会因为酒馆/Gemini 的原因空回，此时 Swipe 一下即可。
+
+这种方案与 Claude Code/OpenClaw 等 agents 类似，会频繁进行工具调用，请妥善配置自己的预设，使得缓存命中率足够，成本可控。
 
 ## 构建
 
