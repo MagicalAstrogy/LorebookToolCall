@@ -91,5 +91,6 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           with-v: true
           release-branch: master,main,develop
-      - if: ${{ github.repository != 'StageDog/tavern_helper_template' && steps.autotag.outputs.tag != '0.0.0' && steps.autotag.outputs.new-tag != steps.autotag.outputs.tag }}
-        run: git push --delete origin ${{ steps.autotag.outputs.tag }}
+#       不再删除已有tag
+#      - if: ${{ github.repository != 'StageDog/tavern_helper_template' && steps.autotag.outputs.tag != '0.0.0' && steps.autotag.outputs.new-tag != steps.autotag.outputs.tag }}
+#        run: git push --delete origin ${{ steps.autotag.outputs.tag }}
