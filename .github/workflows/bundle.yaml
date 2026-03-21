@@ -32,6 +32,7 @@ jobs:
         uses: actions/setup-node@v6
         with:
           node-version: 22
+          registry-url: https://registry.npmjs.org
       - name: Activate Yarn
         run: |-
           corepack enable
@@ -91,6 +92,33 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           with-v: true
           release-branch: master,main,develop
-#       不再删除已有tag
-#      - if: ${{ github.repository != 'StageDog/tavern_helper_template' && steps.autotag.outputs.tag != '0.0.0' && steps.autotag.outputs.new-tag != steps.autotag.outputs.tag }}
-#        run: git push --delete origin ${{ steps.autotag.outputs.tag }}
+      - name: Prepare npm package
+        if: ${{ github.repository != 'StageDog/tavern_helper_template' && steps.autotag.outputs.tag != '0.0.0' && steps.autotag.outputs.new-tag != steps.autotag.outputs.tag }}
+        env:
+          PACKAGE_VERSION: ${{ steps.autotag.outputs.new-tag }}
+          NPM_PACKAGE_NAME: lorebook-tool-call
+        run: node .github/scripts/prepare-wtc-npm-package.mjs
+      - name: Pack npm tarball
+        if: ${{ github.repository != 'StageDog/tavern_helper_template' && steps.autotag.outputs.tag != '0.0.0' && steps.autotag.outputs.new-tag != steps.autotag.outputs.tag }}
+        run: |-
+          mkdir -p npm-dist
+          npm pack ./dist/wtc --pack-destination ./npm-dist
+      - name: Upload npm artifact
+        if: ${{ github.repository != 'StageDog/tavern_helper_template' && steps.autotag.outputs.tag != '0.0.0' && steps.autotag.outputs.new-tag != steps.autotag.outputs.tag }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: npm-package
+          path: npm-dist/*.tgz
+          if-no-files-found: error
+          retention-days: 14
+      - name: Generate npm attestation
+        if: ${{ github.repository != 'StageDog/tavern_helper_template' && steps.autotag.outputs.tag != '0.0.0' && steps.autotag.outputs.new-tag != steps.autotag.outputs.tag }}
+        uses: actions/attest-build-provenance@v3
+        with:
+          subject-path: npm-dist/*.tgz
+      - name: Upgrade npm
+        if: ${{ github.repository != 'StageDog/tavern_helper_template' && steps.autotag.outputs.tag != '0.0.0' && steps.autotag.outputs.new-tag != steps.autotag.outputs.tag }}
+        run: npm install -g npm@^11.10.0
+      - name: Publish to npm
+        if: ${{ github.repository != 'StageDog/tavern_helper_template' && steps.autotag.outputs.tag != '0.0.0' && steps.autotag.outputs.new-tag != steps.autotag.outputs.tag }}
+        run: npm publish ./dist/wtc --access public
