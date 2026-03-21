@@ -8,6 +8,7 @@ import { getIndexForWorldbook, readEntryContent } from '@/wtc/actions/shared';
 const MAX_INLINE_ORIGINAL_FILE_LENGTH = 5000;
 
 export type EditBackup = {
+  // Edit 的回滚始终基于编辑前的完整原文恢复 content。
   rollbackMethod: 'editRollback';
   worldbookName: string;
   filePath: string;
@@ -30,6 +31,7 @@ export async function editRollback(backup: EditBackup) {
           return entry;
         }
         found = true;
+        // Edit 只改 content，因此回滚时直接恢复编辑前的整段文本。
         return { ...entry, content: backup.originalContent };
       });
       if (!found) {
@@ -95,6 +97,7 @@ export async function editAction(args: z.infer<typeof editArgsSchema>) {
       userModified: false,
       replaceAll: args.replace_all === true,
       backup: {
+        // 回滚时按 uid 把 content 恢复成 edit 前的完整文本。
         rollbackMethod: 'editRollback' as const,
         worldbookName,
         filePath: normalized,

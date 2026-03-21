@@ -69,10 +69,22 @@ export async function globAction(args: z.infer<typeof globArgsSchema>) {
     const relative = relativeFromBase(basePath, candidate).replace(/\/$/, '');
     return pattern.test(relative);
   });
+  const includeDirectoryAliases = basePath !== '/' && rawPattern.includes('**');
+  const output = new Set(matched);
+  if (includeDirectoryAliases) {
+    for (const candidate of matched) {
+      if (!candidate.endsWith('/')) {
+        continue;
+      }
+      // 递归 glob 下补一个无尾斜杠别名，兼容常见文件系统 glob 对目录名的返回方式。
+      output.add(candidate.slice(0, -1));
+    }
+  }
+  const result = [...output].sort();
   return {
-    filenames: matched,
+    filenames: result,
     durationMs: 0,
-    numFiles: matched.length,
+    numFiles: result.length,
     truncated: false,
   };
 }
