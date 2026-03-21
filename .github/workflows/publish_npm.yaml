@@ -87,6 +87,8 @@ jobs:
         with:
           subject-path: npm-dist/*.tgz
 
+      - name: Upgrade npm
+        run: npm install -g npm@^11.10.0
       - name: Check trusted publisher configuration
         run: npm trust list lorebook-tool-call
 
