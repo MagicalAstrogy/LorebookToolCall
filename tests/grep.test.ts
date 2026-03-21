@@ -12,9 +12,9 @@ describe('grepAction', () => {
     installMockSillyTavern({
       books: {
         设定集: buildBook([
-          { id: 1, comment: 'notes/a.md', content: 'hello world' },
-          { id: 2, comment: 'notes/b.md', content: 'hello again' },
-          { id: 3, comment: 'notes/c.txt', content: 'hello text' },
+          { uid: 1, comment: 'notes/a.md', content: 'hello world' },
+          { uid: 2, comment: 'notes/b.md', content: 'hello again' },
+          { uid: 3, comment: 'notes/c.txt', content: 'hello text' },
         ]),
       },
     });
@@ -38,7 +38,7 @@ describe('grepAction', () => {
   test('returns content mode with context lines in ripgrep-like format', async () => {
     installMockSillyTavern({
       books: {
-        设定集: buildBook([{ id: 1, comment: '正文.txt', content: '第一行\n命中行\n第三行' }]),
+        设定集: buildBook([{ uid: 1, comment: '正文.txt', content: '第一行\n命中行\n第三行' }]),
       },
     });
 
@@ -58,7 +58,7 @@ describe('grepAction', () => {
   test('rejects root path and invalid regex pattern', async () => {
     installMockSillyTavern({
       books: {
-        设定集: buildBook([{ id: 1, comment: '正文.txt', content: 'abc' }]),
+        设定集: buildBook([{ uid: 1, comment: '正文.txt', content: 'abc' }]),
       },
     });
 

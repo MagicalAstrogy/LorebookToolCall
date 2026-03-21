@@ -1,7 +1,7 @@
 type PopupResult = boolean | string;
 
 interface MockEntry {
-  id: number;
+  uid: number;
   comment: string;
   content: string;
   name?: string;
@@ -104,12 +104,12 @@ function buildState(options: MockOptions) {
       continue;
     }
     const entries = cloned.entries.map(raw => {
-      nextUid = Math.max(nextUid, raw.id + 1);
-      const entry = createDefaultWorldbookEntry(raw.id, raw.name ?? basenameFromComment(raw.comment), raw.content);
+      nextUid = Math.max(nextUid, raw.uid + 1);
+      const entry = createDefaultWorldbookEntry(raw.uid, raw.name ?? basenameFromComment(raw.comment), raw.content);
       return {
         ...entry,
         ...structuredClone(raw.attributes ?? {}),
-        uid: raw.id,
+        uid: raw.uid,
         name: raw.attributes?.name ?? raw.name ?? entry.name,
         content: raw.content,
       } satisfies WorldbookEntry;
@@ -133,9 +133,9 @@ function buildState(options: MockOptions) {
       return;
     }
     raw.entries = raw.entries
-      .filter(rawEntry => worldbook.some(entry => entry.uid === rawEntry.id))
+      .filter(rawEntry => worldbook.some(entry => entry.uid === rawEntry.uid))
       .map(rawEntry => {
-        const entry = worldbook.find(item => item.uid === rawEntry.id)!;
+        const entry = worldbook.find(item => item.uid === rawEntry.uid)!;
         return {
           ...rawEntry,
           name: entry.name,
@@ -185,10 +185,10 @@ export function installMockSillyTavern(options: MockOptions = {}) {
       state.worldbooks.set(
         name,
         cloned.entries.map(rawEntry => {
-          const previous = existing.find(entry => entry.uid === rawEntry.id);
+          const previous = existing.find(entry => entry.uid === rawEntry.uid);
           return {
-            ...(previous ?? createDefaultWorldbookEntry(rawEntry.id, rawEntry.name ?? basenameFromComment(rawEntry.comment), rawEntry.content)),
-            uid: rawEntry.id,
+            ...(previous ?? createDefaultWorldbookEntry(rawEntry.uid, rawEntry.name ?? basenameFromComment(rawEntry.comment), rawEntry.content)),
+            uid: rawEntry.uid,
             name: rawEntry.name ?? previous?.name ?? basenameFromComment(rawEntry.comment),
             content: rawEntry.content,
           };
@@ -252,7 +252,7 @@ export function installMockSillyTavern(options: MockOptions = {}) {
         content: partial.content ?? '',
       } satisfies WorldbookEntry;
       raw.entries.push({
-        id: uid,
+        uid: uid,
         comment: '',
         content: entry.content,
         name: entry.name,
@@ -273,7 +273,7 @@ export function installMockSillyTavern(options: MockOptions = {}) {
     const deletedIds = new Set(deletedEntries.map(entry => entry.uid));
     const kept = worldbook.filter(entry => !deletedIds.has(entry.uid));
     state.worldbooks.set(name, cloneWorldbook(kept));
-    raw.entries = raw.entries.filter(entry => !deletedIds.has(entry.id));
+    raw.entries = raw.entries.filter(entry => !deletedIds.has(entry.uid));
     return {
       worldbook: cloneWorldbook(kept),
       deleted_entries: cloneWorldbook(deletedEntries),

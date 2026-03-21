@@ -31,8 +31,8 @@ describe('globAction', () => {
     installMockSillyTavern({
       books: {
         设定集: buildBook([
-          { id: 1, comment: 'Folder', content: '目录同名文件' },
-          { id: 2, comment: 'Folder/Content', content: '正文' },
+          { uid: 1, comment: 'Folder', content: '目录同名文件' },
+          { uid: 2, comment: 'Folder/Content', content: '正文' },
         ]),
       },
     });
@@ -51,8 +51,8 @@ describe('globAction', () => {
     installMockSillyTavern({
       books: {
         '-SnowYuki': buildBook([
-          { id: 1, comment: 'README', content: '根目录文件' },
-          { id: 2, comment: 'Folder/Nested', content: '嵌套文件' },
+          { uid: 1, comment: 'README', content: '根目录文件' },
+          { uid: 2, comment: 'Folder/Nested', content: '嵌套文件' },
         ]),
       },
     });

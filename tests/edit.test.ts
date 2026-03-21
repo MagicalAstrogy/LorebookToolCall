@@ -11,7 +11,7 @@ describe('editAction', () => {
   test('replaces a single match and returns edit metadata', async () => {
     installMockSillyTavern({
       books: {
-        设定集: buildBook([{ id: 1, comment: '正文', content: 'hello world' }]),
+        设定集: buildBook([{ uid: 1, comment: '正文', content: 'hello world' }]),
       },
     });
 
@@ -43,7 +43,7 @@ describe('editAction', () => {
   test('rejects ambiguous replacement unless replace_all is true', async () => {
     installMockSillyTavern({
       books: {
-        设定集: buildBook([{ id: 1, comment: '正文', content: 'x hello x hello' }]),
+        设定集: buildBook([{ uid: 1, comment: '正文', content: 'x hello x hello' }]),
       },
     });
 
@@ -62,7 +62,7 @@ describe('editAction', () => {
   test('returns TEXT_NOT_FOUND when old_string is missing', async () => {
     installMockSillyTavern({
       books: {
-        设定集: buildBook([{ id: 1, comment: '正文', content: 'abc' }]),
+        设定集: buildBook([{ uid: 1, comment: '正文', content: 'abc' }]),
       },
     });
 
@@ -81,7 +81,7 @@ describe('editAction', () => {
     const oversizedContent = `${'a\n'.repeat(2500)}TAIL`;
     installMockSillyTavern({
       books: {
-        设定集: buildBook([{ id: 1, comment: '正文', content: oversizedContent }]),
+        设定集: buildBook([{ uid: 1, comment: '正文', content: oversizedContent }]),
       },
     });
 
@@ -99,7 +99,7 @@ describe('editAction', () => {
   test('rolls back edited content using backup', async () => {
     const mock = installMockSillyTavern({
       books: {
-        设定集: buildBook([{ id: 1, comment: '正文', content: 'hello world' }]),
+        设定集: buildBook([{ uid: 1, comment: '正文', content: 'hello world' }]),
       },
     });
 

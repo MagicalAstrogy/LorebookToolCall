@@ -11,7 +11,7 @@ describe('deleteAction', () => {
   test('deletes a concrete entry', async () => {
     const mock = installMockSillyTavern({
       books: {
-        设定集: buildBook([{ id: 1, comment: '正文', content: 'abc' }]),
+        设定集: buildBook([{ uid: 1, comment: '正文', content: 'abc' }]),
       },
     });
 
@@ -27,7 +27,7 @@ describe('deleteAction', () => {
   test('rejects virtual directory path', async () => {
     installMockSillyTavern({
       books: {
-        设定集: buildBook([{ id: 1, comment: 'Folder/Content', content: 'abc' }]),
+        设定集: buildBook([{ uid: 1, comment: 'Folder/Content', content: 'abc' }]),
       },
     });
 

@@ -13,7 +13,7 @@ describe('readAction', () => {
       books: {
         设定集: buildBook([
           {
-            id: 1,
+            uid: 1,
             comment: 'Folder/Content',
             content: '第一行\n第二行',
           },
@@ -42,7 +42,7 @@ describe('readAction', () => {
       books: {
         设定集: buildBook([
           {
-            id: 1,
+            uid: 1,
             comment: '章节/正文',
             content: '第1行\n第2行\n第3行\n第4行',
           },
@@ -73,7 +73,7 @@ describe('readAction', () => {
       books: {
         设定集: buildBook([
           {
-            id: 1,
+            uid: 1,
             comment: '长文',
             content: 'a'.repeat(5001),
           },
@@ -115,7 +115,7 @@ describe('readAction', () => {
       books: {
         设定集: buildBook([
           {
-            id: 1,
+            uid: 1,
             comment: '正文',
             content: 'A\nB',
           },
@@ -145,7 +145,7 @@ describe('readAction', () => {
       books: {
         设定集: buildBook([
           {
-            id: 1,
+            uid: 1,
             comment: '正文',
             content: 'A\nB',
           },
@@ -175,7 +175,7 @@ describe('readAction', () => {
       books: {
         设定集: buildBook([
           {
-            id: 1,
+            uid: 1,
             comment: '正文',
             content: 'A\nB',
           },
@@ -243,7 +243,7 @@ describe('readAction', () => {
       books: {
         设定集: buildBook([
           {
-            id: 1,
+            uid: 1,
             comment: '正文',
             content: '内容',
           },

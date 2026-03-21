@@ -13,7 +13,7 @@ describe('getAttributeAction', () => {
       books: {
         设定集: buildBook([
           {
-            id: 1,
+            uid: 1,
             comment: '正文',
             content: '内容',
             attributes: { enabled: false, probability: 42, position: { depth: 3 } as WorldbookEntry['position'] },

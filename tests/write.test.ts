@@ -40,7 +40,7 @@ describe('writeAction', () => {
   test('updates an existing entry and returns originalFile plus patch', async () => {
     installMockSillyTavern({
       books: {
-        设定集: buildBook([{ id: 1, comment: '正文', content: '旧文本' }]),
+        设定集: buildBook([{ uid: 1, comment: '正文', content: '旧文本' }]),
       },
     });
 
@@ -83,7 +83,7 @@ describe('writeAction', () => {
   test('rolls back an updated entry using backup', async () => {
     const mock = installMockSillyTavern({
       books: {
-        设定集: buildBook([{ id: 1, comment: '正文', content: '旧文本' }]),
+        设定集: buildBook([{ uid: 1, comment: '正文', content: '旧文本' }]),
       },
     });
 

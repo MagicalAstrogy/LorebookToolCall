@@ -13,7 +13,7 @@ describe('setAttributeAction', () => {
       books: {
         设定集: buildBook([
           {
-            id: 1,
+            uid: 1,
             comment: '正文',
             content: '内容',
             attributes: {
@@ -62,8 +62,15 @@ describe('setAttributeAction', () => {
       filePath: '/设定集/正文',
       uid: 1,
     });
-    expect(result.backup.previousEntry.enabled).toBe(true);
-    expect(result.backup.previousEntry.content).toBe('内容');
+    expect(result.backup.rollbackPatch).toStrictEqual({
+      enabled: true,
+      strategy: {
+        keys: ['旧关键字'],
+      },
+      position: {
+        depth: 1,
+      },
+    });
     expect(mock.worldbooks.get('设定集')?.[0]?.position.depth).toBe(4);
   });
 
@@ -72,7 +79,7 @@ describe('setAttributeAction', () => {
       books: {
         设定集: buildBook([
           {
-            id: 1,
+            uid: 1,
             comment: '正文',
             content: '内容',
             attributes: {
@@ -104,6 +111,62 @@ describe('setAttributeAction', () => {
     expect(mock.worldbooks.get('设定集')?.[0]?.enabled).toBe(true);
     expect(mock.worldbooks.get('设定集')?.[0]?.position.depth).toBe(1);
     expect(mock.worldbooks.get('设定集')?.[0]?.content).toBe('内容');
+  });
+
+  test('rolls back only touched fields and preserves later unrelated changes', async () => {
+    const mock = installMockSillyTavern({
+      books: {
+        设定集: buildBook([
+          {
+            uid: 1,
+            comment: '正文',
+            content: '内容',
+            attributes: {
+              enabled: true,
+              probability: 42,
+              position: {
+                type: 'at_depth',
+                role: 'system',
+                depth: 1,
+                order: 10,
+              },
+            },
+          },
+        ]),
+      },
+    });
+
+    const result = await setAttributeAction({
+      file_path: '/设定集/正文',
+      attributes: {
+        enabled: false,
+        position: {
+          depth: 4,
+        },
+      },
+    });
+
+    await updateWorldbookWith('设定集', worldbook =>
+      worldbook.map(entry =>
+        entry.uid === 1
+          ? {
+              ...entry,
+              probability: 99,
+              position: {
+                ...entry.position,
+                order: 77,
+              },
+            }
+          : entry,
+      ),
+    );
+
+    await setAttributeRollback(result.backup);
+
+    expect(mock.worldbooks.get('设定集')?.[0]?.enabled).toBe(true);
+    expect(mock.worldbooks.get('设定集')?.[0]?.position.depth).toBe(1);
+    expect(mock.worldbooks.get('设定集')?.[0]?.probability).toBe(99);
+    expect(mock.worldbooks.get('设定集')?.[0]?.position.order).toBe(77);
   });
 
   test('returns ENTRY_NOT_FOUND for missing entry', async () => {
