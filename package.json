@@ -2,7 +2,7 @@
   "scripts": {
     "build:dev": "webpack --mode development",
     "build": "webpack --mode production",
-    "test": "jest --runInBand",
+    "test": "jest",
     "test:coverage": "jest --runInBand --coverage --collectCoverageFrom=src/wtc/actions/read.ts",
     "watch": "webpack --mode development --watch --progress",
     "format": "prettier --write \"src/**/*.{ts,tsx,js,jsx,css,scss,html,vue}\" --no-error-on-unmatched-pattern",
