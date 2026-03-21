@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { resetPermissionCache } from '@/wtc/permission';
 import { stringifyResult, toErrorResult, ToolError } from '@/wtc/result';
-import { askUserQuestionAction } from '@/wtc/actions/ask_user_question';
+//import { askUserQuestionAction } from '@/wtc/actions/ask_user_question';
 import { createLorebookAction } from '@/wtc/actions/create_lorebook';
 import { deleteAction } from '@/wtc/actions/delete';
 import { editAction } from '@/wtc/actions/edit';
@@ -12,7 +12,7 @@ import { readAction } from '@/wtc/actions/read';
 import { setAttributeAction } from '@/wtc/actions/set_attribute';
 import { writeAction } from '@/wtc/actions/write';
 import {
-  askUserQuestionArgsSchema,
+//  askUserQuestionArgsSchema,
   createLorebookArgsSchema,
   deleteArgsSchema,
   getAttributeArgsSchema,
@@ -99,8 +99,8 @@ const deleteDescription =
   'Deletes an entry from the virtual lorebook filesystem.\n\nUsage:\n- The file_path parameter must be an absolute virtual path like "/${LorebookName}/Entry"\n- This tool only deletes entries, not lorebooks\n- This tool does not delete virtual directories; if a path resolves to a directory-like prefix, the request will fail\n- Use this tool when you need to remove a specific lorebook entry.';
 const createLorebookDescription =
   'Creates a new empty lorebook.\n\nUsage:\n- lorebook_name must be the exact lorebook name to create\n- The name must not contain "/"\n- If a lorebook with the same name already exists, the request will fail\n- Use this tool when you need a new lorebook root before writing entries into it.';
-const askUserQuestionDescription =
-  "Use this tool when you need to ask the user a direct question during execution.\n\nUsage:\n- Use this tool to gather missing information, clarify ambiguous instructions, or request user-provided text\n- The tool opens an input popup and returns the user's answer as a string\n- If the user cancels the popup, the request fails with USER_REJECTED\n- Prefer this tool only when the needed information cannot be inferred safely from the current context.";
+//const askUserQuestionDescription =
+//  "Use this tool when you need to ask the user a direct question during execution.\n\nUsage:\n- Use this tool to gather missing information, clarify ambiguous instructions, or request user-provided text\n- The tool opens an input popup and returns the user's answer as a string\n- If the user cancels the popup, the request fails with USER_REJECTED\n- Prefer this tool only when the needed information cannot be inferred safely from the current context.";
 const getAttributeDescription =
   'Retrieves the full attribute object for a lorebook entry.\n\nUsage:\n- The file_path parameter must be an absolute virtual path like "/${LorebookName}/Entry"\n- Attributes only exist on entries, not on lorebook roots or virtual directories\n- The returned attributes reuse the WorldbookEntry structure directly\n- Use this tool when you need metadata such as enabled state, insertion position, trigger strategy, or other entry fields.';
 const setAttributeDescription =

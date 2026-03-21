@@ -37,6 +37,10 @@ const packageJson = {
   bugs: {
     url: `https://github.com/${repository}/issues`,
   },
+  publishConfig: {
+    access: 'public',
+    provenance: true,
+  },
 };
 
 await mkdir(outDir, { recursive: true });
