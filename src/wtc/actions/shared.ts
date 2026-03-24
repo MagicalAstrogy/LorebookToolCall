@@ -1,5 +1,5 @@
 import { ToolError } from '@/wtc/result';
-import { buildPathIndex, ensureNoConflict, loadRawWorldbook, requireFileTarget } from '@/wtc/store';
+import { buildPathIndex, ensureNoConflict, loadRawWorldbook, requireLorebookFileTarget } from '@/wtc/store';
 
 export async function getIndexForWorldbook(worldbookName: string) {
   // 先拉原始世界书，再建立一次只面向工具层的虚拟文件索引。
@@ -8,7 +8,7 @@ export async function getIndexForWorldbook(worldbookName: string) {
 }
 
 export async function readEntryContent(filePath: string) {
-  const { worldbookName } = requireFileTarget(filePath);
+  const { worldbookName } = requireLorebookFileTarget(filePath);
   const { index } = await getIndexForWorldbook(worldbookName);
   ensureNoConflict(index, filePath);
   const found = index.exactFiles.get(filePath);

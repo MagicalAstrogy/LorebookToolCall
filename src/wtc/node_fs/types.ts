@@ -1,13 +1,14 @@
 import type { IndexedEntry } from '@/wtc/store';
 
 export type NodeKind = 'directory' | 'file';
+export type ExtendedNodeKind = NodeKind | 'symlink';
 
 export interface NodeStat {
-  // 节点在整棵 Node FS 中的绝对路径，如 "/设定集/NPC/理理"。
+  // 节点在整棵 Node FS 中的绝对路径，如 "/Worldbooks/设定集/NPC/理理"。
   path: string;
   // 节点在父目录中的局部名字，不携带父路径。
   name: string;
-  kind: NodeKind;
+  kind: ExtendedNodeKind;
   readable: boolean;
   writable: boolean;
 }
@@ -32,6 +33,17 @@ export interface DirectoryNode extends Node {
   mount?(name: string, node: Node): Promise<void> | void;
 }
 
+export interface WritableDirectoryNode extends DirectoryNode {
+  /** 读取当前目录下可写入的子文件节点；允许返回“尚不存在但可通过 write 创建”的占位节点。 */
+  getWritableChild(name: string): Promise<TextFileNode | null>;
+}
+
+export interface SymlinkNode extends Node {
+  stat(): Promise<NodeStat & { kind: 'symlink' }>;
+  /** 返回软链接目标的绝对虚拟路径。 */
+  readlink(): Promise<string>;
+}
+
 export interface TextFilePatch {
   oldString: string;
   newString: string;
@@ -40,6 +52,8 @@ export interface TextFilePatch {
 
 export interface TextFileNode extends Node {
   stat(): Promise<NodeStat & { kind: 'file' }>;
+  /** 当前文件节点是否已经持久存在。create-on-write 占位节点会返回 false。 */
+  readonly exists: boolean;
   // read/write/edit 都只作用于文件正文，不涉及属性。
   /** 读取文件正文，可选按行偏移和截断。 */
   read(opts?: { offset?: number; limit?: number }): Promise<string>;
@@ -62,9 +76,32 @@ export interface DeletableNode extends Node {
   delete(): Promise<void>;
 }
 
+export type DeleteBackup =
+  | {
+      rollbackMethod: 'deleteRollback';
+      strategy: 'write';
+      filePath: string;
+      content: string;
+      attributes?: Record<string, unknown>;
+    }
+  | {
+      rollbackMethod: 'deleteRollback';
+      strategy: 'insert_character_first_message';
+      filePath: string;
+      characterName: string;
+      index: number;
+      content: string;
+    };
+
+export interface DeleteBackupCapableNode extends DeletableNode {
+  /** 生成删除前快照，供 deleteRollback 使用。 */
+  createDeleteBackup(): Promise<DeleteBackup>;
+}
+
 export interface LorebookView {
   // 这是一份“单次操作范围内”的有序视图，用于支撑遍历与解析。
-  lorebookName: string;
+  worldbookName: string;
+  rootPath: string;
   files: IndexedEntry[];
   directories: string[];
   exactFiles: Map<string, IndexedEntry>;
@@ -85,4 +122,16 @@ export function isAttributeNode(node: Node): node is AttributeNode {
 
 export function isDeletableNode(node: Node): node is DeletableNode {
   return 'delete' in node && typeof node.delete === 'function';
+}
+
+export function isDeleteBackupCapableNode(node: Node): node is DeleteBackupCapableNode {
+  return isDeletableNode(node) && 'createDeleteBackup' in node && typeof node.createDeleteBackup === 'function';
+}
+
+export function isSymlinkNode(node: Node): node is SymlinkNode {
+  return 'readlink' in node && typeof node.readlink === 'function';
+}
+
+export function isWritableDirectoryNode(node: Node): node is WritableDirectoryNode {
+  return 'getWritableChild' in node && typeof node.getWritableChild === 'function';
 }

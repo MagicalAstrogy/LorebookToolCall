@@ -1,9 +1,10 @@
-import type { DirectoryNode, LorebookView, Node, NodeStat } from '@/wtc/node_fs/types';
+import type { LorebookView, Node, NodeStat, TextFileNode, WritableDirectoryNode } from '@/wtc/node_fs/types';
 import { directoryExistsInView } from '@/wtc/node_fs/view';
 import { basenameFromPath, entryForFilePath, findDirectoryFileSpan, listImmediateChildren, normalizeChildPath } from '@/wtc/node_fs/helpers';
-import { LorebookEntryNode } from '@/wtc/node_fs/lorebook_entry_node';
+import { CreatableLorebookEntryNode, LorebookEntryNode } from '@/wtc/node_fs/lorebook_entry_node';
+import { ConflictTextFileNode } from '@/wtc/node_fs/character_child_nodes';
 
-export class VirtualDirectoryNode implements DirectoryNode {
+export class VirtualDirectoryNode implements WritableDirectoryNode {
   // VirtualDirectoryNode 只是“view + 目录前缀”的短生命周期视图节点。
   // 其中 `fileStart/fileEnd` 表示当前目录在 view.files 中负责的连续半开区间。
   constructor(
@@ -73,5 +74,18 @@ export class VirtualDirectoryNode implements DirectoryNode {
     for (const node of nodes) {
       yield node;
     }
+  }
+
+  /** 读取当前虚拟目录下可写入的直接子文件；缺失时返回 create-on-write 占位节点。 */
+  async getWritableChild(name: string): Promise<TextFileNode | null> {
+    const existing = await this.getChild(name);
+    if (existing && 'read' in existing) {
+      return existing as TextFileNode;
+    }
+    if (existing) {
+      return new ConflictTextFileNode(normalizeChildPath(this.path, name) ?? `${this.path}/${name}`);
+    }
+    const filePath = normalizeChildPath(this.path, name);
+    return filePath ? new CreatableLorebookEntryNode(this.view.worldbookName, filePath, filePath.slice(this.view.rootPath.length + 1)) : null;
   }
 }

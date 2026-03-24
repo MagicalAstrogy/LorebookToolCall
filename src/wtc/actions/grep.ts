@@ -1,5 +1,5 @@
 import type { z } from 'zod';
-import { ensureLorebookPermission } from '@/wtc/permission';
+import { ensurePathPermission } from '@/wtc/permission';
 import { ToolError, invalidPathDetail } from '@/wtc/result';
 import { grepArgsSchema } from '@/wtc/schema';
 import { globToRegExp, inferTypeMatches, parseVirtualPath, relativeFromBase } from '@/wtc/store';
@@ -9,13 +9,14 @@ import { isTextFileNode } from '@/wtc/node_fs/types';
 import { walkDirectory } from '@/wtc/node_fs/walk';
 
 export async function grepAction(args: z.infer<typeof grepArgsSchema>) {
-  const { normalized, worldbookName } = parseVirtualPath(args.path);
-  if (!worldbookName || normalized === '/') {
-    throw new ToolError('InputValidationError', 'Grep.path 必须落在某一个确定的世界书内。', [
+  const parsed = parseVirtualPath(args.path);
+  const { normalized } = parsed;
+  if (parsed.rootKind === 'root' || parsed.rootKind === 'lorebooks_root' || parsed.rootKind === 'characters_root') {
+    throw new ToolError('InputValidationError', 'Grep.path 必须落在某一个确定的 Worldbook 或 Character 子树内。', [
       invalidPathDetail(args.path, 'path'),
     ]);
   }
-  await ensureLorebookPermission(worldbookName, 'read');
+  await ensurePathPermission(normalized, 'read', { followCharacterWorldbook: true });
   const outputMode = args.output_mode ?? 'files_with_matches';
   const regex = compilePattern(args.pattern, args['-i'] ?? false, args.multiline ?? false);
   const globMatcher = args.glob ? globToRegExp(args.glob) : null;

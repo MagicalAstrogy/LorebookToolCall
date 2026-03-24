@@ -70,8 +70,8 @@ function lowerBoundByPath(files: readonly IndexedEntry[], target: string) {
  * - `fileEnd` 是目录下最后一条文件的后一位索引
  */
 export function findDirectoryFileSpan(view: LorebookView, directoryPath: string) {
-  const normalizedDirectory = directoryPath === `/${view.lorebookName}` ? directoryPath : directoryPath.replace(/\/+$/, '');
-  if (normalizedDirectory === `/${view.lorebookName}`) {
+  const normalizedDirectory = directoryPath === view.rootPath ? directoryPath : directoryPath.replace(/\/+$/, '');
+  if (normalizedDirectory === view.rootPath) {
     return {
       fileStart: 0,
       fileEnd: view.files.length,
@@ -102,7 +102,7 @@ export function listImmediateChildren(
   fileStart: number,
   fileEnd: number,
 ): DirectoryChildDescriptor[] {
-  const normalizedDirectory = directoryPath === `/${view.lorebookName}` ? directoryPath : directoryPath.replace(/\/+$/, '');
+  const normalizedDirectory = directoryPath === view.rootPath ? directoryPath : directoryPath.replace(/\/+$/, '');
   const basePrefix = `${normalizedDirectory}/`;
   const children: DirectoryChildDescriptor[] = [];
 

@@ -1,6 +1,14 @@
 import { ToolError } from '@/wtc/result';
+import { CHARACTERS_ROOT_PATH, LOREBOOKS_ROOT_PATH, normalizeVirtualPath, parseVirtualPath } from '@/wtc/store';
 
 type PermissionLevel = 1 | 2 | 3;
+
+type PermissionScope = {
+  cacheKey: string;
+  displayPath: string;
+  kind: 'lorebook' | 'character';
+  name: string;
+};
 
 // 按世界书缓存本页会话内已授权的最高权限，避免重复弹窗。
 const permissionCache = new Map<string, PermissionLevel>();
@@ -54,15 +62,15 @@ async function backupLorebook(worldbookName: string) {
   downloadBackup(JSON.stringify(data), `${worldbookName}.json`, 'application/json');
 }
 
-export async function ensureLorebookPermission(worldbookName: string, operation: 'read' | 'write' | 'delete') {
+async function ensureScopePermission(scope: PermissionScope, operation: 'read' | 'write' | 'delete') {
   const level = requiredLevel(operation);
   // 高权限天然覆盖低权限，例如已允许 delete 时不必再次确认 read/write。
-  if ((permissionCache.get(worldbookName) ?? 0) >= level) {
+  if ((permissionCache.get(scope.cacheKey) ?? 0) >= level) {
     return;
   }
 
   const result = await SillyTavern.callGenericPopup(
-    `LLM 请求对 '/${worldbookName}' 进行 ${operationText(operation)}，是否允许？`,
+    `LLM 请求对 '${scope.displayPath}' 进行 ${operationText(operation)}，是否允许？`,
     SillyTavern.POPUP_TYPE.CONFIRM,
     '',
     {
@@ -70,14 +78,15 @@ export async function ensureLorebookPermission(worldbookName: string, operation:
       cancelButton: '拒绝',
       customButtons: [
         {
-          text: `对 '/${worldbookName}' 始终允许`,
+          text: `对 '${scope.displayPath}' 始终允许`,
           result: SillyTavern.POPUP_RESULT.CUSTOM1,
           appendAtEnd: true,
         },
         ...(operation === 'write'
+          && scope.kind === 'lorebook'
           ? [
               {
-                text: `备份 '/${worldbookName}' 并始终允许`,
+                text: `备份 '${scope.displayPath}' 并始终允许`,
                 result: SillyTavern.POPUP_RESULT.CUSTOM2,
                 appendAtEnd: true,
               },
@@ -89,19 +98,71 @@ export async function ensureLorebookPermission(worldbookName: string, operation:
   );
 
   if (result === SillyTavern.POPUP_RESULT.CUSTOM1) {
-    permissionCache.set(worldbookName, level);
+    permissionCache.set(scope.cacheKey, level);
     return;
   }
   if (result === SillyTavern.POPUP_RESULT.CUSTOM2) {
-    await backupLorebook(worldbookName);
-    permissionCache.set(worldbookName, level);
+    await backupLorebook(scope.name);
+    permissionCache.set(scope.cacheKey, level);
     return;
   }
   if (result === true || result === SillyTavern.POPUP_RESULT.AFFIRMATIVE) {
     return;
   }
 
-  throw new ToolError('PERMISSION_DENIED', `用户拒绝对 '/${worldbookName}' 进行 ${operationText(operation)}。`);
+  throw new ToolError('PERMISSION_DENIED', `用户拒绝对 '${scope.displayPath}' 进行 ${operationText(operation)}。`);
+}
+
+export async function ensureLorebookPermission(worldbookName: string, operation: 'read' | 'write' | 'delete') {
+  return ensureScopePermission(
+    {
+      cacheKey: `lorebook:${worldbookName}`,
+      displayPath: `${LOREBOOKS_ROOT_PATH}/${worldbookName}`,
+      kind: 'lorebook',
+      name: worldbookName,
+    },
+    operation,
+  );
+}
+
+export async function ensureCharacterPermission(characterName: string, operation: 'read' | 'write' | 'delete') {
+  return ensureScopePermission(
+    {
+      cacheKey: `character:${characterName}`,
+      displayPath: `${CHARACTERS_ROOT_PATH}/${characterName}`,
+      kind: 'character',
+      name: characterName,
+    },
+    operation,
+  );
+}
+
+export async function ensurePathPermission(
+  path: string,
+  operation: 'read' | 'write' | 'delete',
+  options: { followCharacterWorldbook?: boolean } = {},
+) {
+  const normalized = normalizeVirtualPath(path);
+  if (!normalized || normalized === '/') {
+    return;
+  }
+  const parsed = parseVirtualPath(normalized);
+  if (parsed.rootKind === 'lorebook') {
+    await ensureLorebookPermission(parsed.entityName, operation);
+    return;
+  }
+  if (parsed.rootKind !== 'character') {
+    return;
+  }
+  if (options.followCharacterWorldbook && parsed.relativePath?.startsWith('WorldBook')) {
+    const character = await getCharacter(parsed.entityName);
+    if (!character.worldbook) {
+      throw new ToolError('WORLD_NOT_FOUND', `角色卡 '${parsed.entityName}' 未绑定世界书。`);
+    }
+    await ensureLorebookPermission(character.worldbook, operation);
+    return;
+  }
+  await ensureCharacterPermission(parsed.entityName, operation);
 }
 
 export function resetPermissionCache() {

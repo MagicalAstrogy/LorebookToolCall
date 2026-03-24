@@ -1,14 +1,16 @@
-import type { DirectoryNode, Node, NodeStat } from '@/wtc/node_fs/types';
+import type { Node, NodeStat, TextFileNode, WritableDirectoryNode } from '@/wtc/node_fs/types';
 import { openLorebookView } from '@/wtc/node_fs/view';
 import { entryForFilePath, findDirectoryFileSpan, listImmediateChildren, normalizeChildPath } from '@/wtc/node_fs/helpers';
-import { LorebookEntryNode } from '@/wtc/node_fs/lorebook_entry_node';
+import { CreatableLorebookEntryNode, LorebookEntryNode } from '@/wtc/node_fs/lorebook_entry_node';
 import { VirtualDirectoryNode } from '@/wtc/node_fs/virtual_directory_node';
+import { ConflictTextFileNode } from '@/wtc/node_fs/character_child_nodes';
+import { toLorebookRootPath } from '@/wtc/store';
 
-export class LorebookNode implements DirectoryNode {
+export class LorebookNode implements WritableDirectoryNode {
   public readonly path: string;
 
   constructor(public readonly lorebookName: string) {
-    this.path = `/${lorebookName}`;
+    this.path = toLorebookRootPath(lorebookName);
   }
 
   /** 返回当前世界书目录节点的基础信息。 */
@@ -47,6 +49,19 @@ export class LorebookNode implements DirectoryNode {
     }
     const entry = entryForFilePath(view, filePath);
     return entry ? new LorebookEntryNode(view, entry) : null;
+  }
+
+  /** 读取当前世界书根目录下可写入的直接子文件；缺失时返回 create-on-write 占位节点。 */
+  async getWritableChild(name: string): Promise<TextFileNode | null> {
+    const existing = await this.getChild(name);
+    if (existing && 'read' in existing) {
+      return existing as TextFileNode;
+    }
+    if (existing) {
+      return new ConflictTextFileNode(normalizeChildPath(this.path, name) ?? `${this.path}/${name}`);
+    }
+    const filePath = normalizeChildPath(this.path, name);
+    return filePath ? new CreatableLorebookEntryNode(this.lorebookName, filePath, name) : null;
   }
 
   /** 列出当前世界书根目录下的直接子节点。 */

@@ -1,142 +1,159 @@
 import type { z } from 'zod';
-import { ensureLorebookPermission } from '@/wtc/permission';
-import { ToolError } from '@/wtc/result';
+import { ensurePathPermission } from '@/wtc/permission';
+import { ToolError, invalidPathDetail } from '@/wtc/result';
 import { writeArgsSchema } from '@/wtc/schema';
-import {
-  basenameFromEntryPath,
-  createStructuredPatch,
-  findRawBookEntry,
-  loadRawWorldbook,
-  requireFileTarget,
-  saveRawWorldbook,
-  withWorldbookQueue,
-} from '@/wtc/store';
-import { resolveFileNode } from '@/wtc/node_fs/nodes';
+import type { StructuredPatch } from '@/wtc/store';
+import { createStructuredPatch, normalizeVirtualPath } from '@/wtc/store';
+import { resolveDirectoryNode, resolveWritableFileNode } from '@/wtc/node_fs/nodes';
+import { resolveCharacterWriteCreateRollbackContext } from '@/wtc/fs_bind';
+import { restoreCharacterFirstMessagesLength } from '@/wtc/fs_bind';
+import { isDeletableNode } from '@/wtc/node_fs/types';
 
 export type WriteBackup =
   | {
-      // create 场景回滚依赖 uid 删除刚创建的条目。
       rollbackMethod: 'writeRollback';
       mode: 'create';
-      worldbookName: string;
       filePath: string;
-      uid: number;
+      strategy: 'delete';
     }
   | {
-      // update 场景回滚只需要恢复写入前的完整内容。
+      rollbackMethod: 'writeRollback';
+      filePath: string;
+      mode: 'create';
+      strategy: 'restore_character_first_messages_length';
+      characterName: string;
+      previousLength: number;
+    }
+  | {
       rollbackMethod: 'writeRollback';
       mode: 'update';
-      worldbookName: string;
       filePath: string;
-      uid: number;
       originalContent: string;
     };
+
+type WriteActionResult = {
+  type: 'create' | 'update';
+  filePath: string;
+  content: string;
+  structuredPatch: StructuredPatch[];
+  originalFile: string | null;
+  warnings?: string[];
+  backup?: WriteBackup;
+};
 
 /**
  * 回滚方式：
  * 将本次 `writeAction()` 返回的 `backup` 原样传给 `writeRollback()`，
  * `create` 会删除刚创建的条目，`update` 会把内容恢复到写入前。
  */
-export async function writeRollback(backup: WriteBackup) {
+export async function writeRollback(backup: WriteBackup | undefined) {
+  if (!backup) {
+    throw new ToolError('InputValidationError', '当前写入结果不包含可回滚信息。');
+  }
   if (backup.mode === 'create') {
-    await ensureLorebookPermission(backup.worldbookName, 'delete');
-    return withWorldbookQueue(backup.worldbookName, async () => {
-      // create 的回滚语义就是删除本次新增出来的条目。
-      const { deleted_entries } = await deleteWorldbookEntries(backup.worldbookName, entry => entry.uid === backup.uid);
-      if (deleted_entries.length === 0) {
-        throw new ToolError('ENTRY_NOT_FOUND', `条目 '${backup.filePath}' 不存在，无法回滚创建操作。`);
-      }
+    if (backup.strategy === 'restore_character_first_messages_length') {
+      await ensurePathPermission(backup.filePath, 'write', { followCharacterWorldbook: true });
+      await restoreCharacterFirstMessagesLength(backup.characterName, backup.previousLength);
       return {
         filePath: backup.filePath,
         rolledBack: true,
       };
-    });
-  }
+    }
 
-  await ensureLorebookPermission(backup.worldbookName, 'write');
-  return withWorldbookQueue(backup.worldbookName, async () => {
-    await updateWorldbookWith(backup.worldbookName, worldbook => {
-      let found = false;
-      const restored = worldbook.map(entry => {
-        if (entry.uid !== backup.uid) {
-          return entry;
-        }
-        found = true;
-        // update 的回滚直接恢复写入前的内容，不影响其他字段。
-        return { ...entry, content: backup.originalContent };
-      });
-      if (!found) {
-        throw new ToolError('ENTRY_NOT_FOUND', `条目 '${backup.filePath}' 不存在，无法回滚写入操作。`);
-      }
-      return restored;
-    });
-
+    await ensurePathPermission(backup.filePath, 'delete', { followCharacterWorldbook: true });
+    const file = await resolveWritableFileNode(backup.filePath);
+    if (!file || !('path' in file)) {
+      throw new ToolError('ENTRY_NOT_FOUND', `条目 '${backup.filePath}' 不存在，无法回滚创建操作。`);
+    }
+    const existing = await resolveWritableFileNode(backup.filePath);
+    if (!existing || !('exists' in existing) || existing.exists !== true) {
+      throw new ToolError('ENTRY_NOT_FOUND', `条目 '${backup.filePath}' 不存在，无法回滚创建操作。`);
+    }
+    if (!isDeletableNode(existing)) {
+      throw new ToolError('InputValidationError', '当前写入结果不支持回滚删除。');
+    }
+    await existing.delete();
     return {
       filePath: backup.filePath,
       rolledBack: true,
     };
-  });
+  }
+
+  await ensurePathPermission(backup.filePath, 'write', { followCharacterWorldbook: true });
+  const writable = await resolveWritableFileNode(backup.filePath);
+  if (!writable) {
+    throw new ToolError('ENTRY_NOT_FOUND', `条目 '${backup.filePath}' 不存在，无法回滚写入操作。`);
+  }
+  await writable.write(backup.originalContent);
+  return {
+    filePath: backup.filePath,
+    rolledBack: true,
+  };
 }
 
-export async function writeAction(args: z.infer<typeof writeArgsSchema>) {
-  const { normalized, worldbookName, entryPath } = requireFileTarget(args.file_path);
-  await ensureLorebookPermission(worldbookName, 'write');
+export async function writeAction(args: z.infer<typeof writeArgsSchema>): Promise<WriteActionResult> {
+  const normalized = normalizeVirtualPath(args.file_path);
+  if (!normalized) {
+    throw new ToolError('InputValidationError', 'file_path 必须是绝对路径。', [invalidPathDetail(args.file_path)]);
+  }
+  await ensurePathPermission(normalized, 'write', { followCharacterWorldbook: true });
 
-  return withWorldbookQueue(worldbookName, async () => {
-    const node = await resolveFileNode(normalized);
-    if (node) {
-      // 路径已存在时按覆盖写入处理，并返回结构化 patch 方便模型理解变更。
-      const original = await node.read();
-      await node.write(args.content);
+  const node = await resolveWritableFileNode(normalized);
+  if (!node) {
+    if (await resolveDirectoryNode(normalized)) {
+      throw new ToolError('InputValidationError', 'Write 只接受具体文件路径，不能写入目录。', [invalidPathDetail(args.file_path)]);
+    }
+    throw new ToolError('InputValidationError', '当前路径不可写入。', [invalidPathDetail(args.file_path)]);
+  }
+  const originalContent = node.exists ? await node.read() : null;
+  const createRollbackContext = originalContent === null ? await resolveCharacterWriteCreateRollbackContext(normalized) : null;
+  const writeNode = async () => {
+    await node.write(args.content);
+    return 'takeLastWarnings' in node && typeof node.takeLastWarnings === 'function' ? node.takeLastWarnings() : [];
+  };
+
+  const finalize = async (warnings: string[]) => ({
+    type: node.exists ? ('update' as const) : ('create' as const),
+    filePath: normalized,
+    content: args.content,
+    structuredPatch: originalContent === null ? [] : createStructuredPatch(originalContent, args.content),
+    originalFile: originalContent,
+    ...(warnings.length > 0 ? { warnings } : {}),
+  });
+
+  const warnings = await writeNode();
+  const base = await finalize(warnings);
+  if (originalContent === null) {
+    if (createRollbackContext) {
       return {
-        type: 'update' as const,
-        filePath: normalized,
-        content: args.content,
-        structuredPatch: createStructuredPatch(original, args.content),
-        originalFile: original,
+        ...base,
         backup: {
-          // 回滚时按 uid 把 content 恢复成写入前的原文。
           rollbackMethod: 'writeRollback' as const,
-          mode: 'update' as const,
-          worldbookName,
+          mode: 'create' as const,
           filePath: normalized,
-          uid: node.uid,
-          originalContent: original,
+          strategy: 'restore_character_first_messages_length' as const,
+          characterName: createRollbackContext.characterName,
+          previousLength: createRollbackContext.previousLength,
         },
       };
     }
-
-    const { new_entries } = await createWorldbookEntries(worldbookName, [
-      {
-        name: basenameFromEntryPath(entryPath),
-        content: args.content,
-      },
-    ]);
-    // 底层创建接口不会替我们设置 comment，所以需要回写成目标虚拟路径。
-    const created = new_entries[0];
-    const reloaded = await loadRawWorldbook(worldbookName);
-    //@ts-expect-error 类型定义不符
-    const raw = findRawBookEntry(reloaded, entry => entry.uid === created.uid);
-    if (!raw) {
-      throw new ToolError('tool_use_error', '创建条目后无法在世界书中定位新条目。');
-    }
-    raw.comment = entryPath;
-    raw.content = args.content;
-    await saveRawWorldbook(worldbookName, reloaded);
     return {
-      type: 'create' as const,
-      filePath: normalized,
-      content: args.content,
-      structuredPatch: [],
-      originalFile: null,
+      ...base,
       backup: {
-        // 回滚时按 uid 删除本次 create 新增的条目。
         rollbackMethod: 'writeRollback' as const,
         mode: 'create' as const,
-        worldbookName,
         filePath: normalized,
-        uid: created.uid,
+        strategy: 'delete' as const,
       },
     };
-  });
+  }
+  return {
+    ...base,
+    backup: {
+      rollbackMethod: 'writeRollback' as const,
+      mode: 'update' as const,
+      filePath: normalized,
+      originalContent,
+    },
+  };
 }

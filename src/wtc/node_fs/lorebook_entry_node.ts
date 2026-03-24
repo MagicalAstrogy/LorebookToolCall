@@ -1,8 +1,9 @@
 import { ToolError } from '@/wtc/result';
-import { applyWorldbookPatch, basenameFromEntryPath } from '@/wtc/store';
-import type { AttributeNode, DeletableNode, LorebookView, NodeStat, TextFileNode } from '@/wtc/node_fs/types';
+import { applyWorldbookPatch, basenameFromEntryPath, findRawBookEntry, loadRawWorldbook, saveRawWorldbook } from '@/wtc/store';
+import type { AttributeNode, DeleteBackup, DeletableNode, LorebookView, NodeStat, TextFileNode } from '@/wtc/node_fs/types';
 
 export class LorebookEntryNode implements TextFileNode, AttributeNode, DeletableNode {
+  public readonly exists = true;
   public readonly path: string;
   public readonly lorebookName: string;
 
@@ -12,7 +13,7 @@ export class LorebookEntryNode implements TextFileNode, AttributeNode, Deletable
   ) {
     // LorebookEntryNode 绑定到某一次 view，不保证跨 view 的对象身份稳定。
     this.path = entry.filePath;
-    this.lorebookName = view.lorebookName;
+    this.lorebookName = view.worldbookName;
   }
 
   get uid() {
@@ -91,6 +92,23 @@ export class LorebookEntryNode implements TextFileNode, AttributeNode, Deletable
     }
   }
 
+  /** 生成删除前快照，用于通用 deleteRollback 恢复。 */
+  async createDeleteBackup(): Promise<DeleteBackup> {
+    const attributes = await this.getattr();
+    const { uid: _uid, comment: _comment, content: _content, ...rest } = attributes as Record<string, unknown> & {
+      uid?: unknown;
+      comment?: unknown;
+      content?: unknown;
+    };
+    return {
+      rollbackMethod: 'deleteRollback',
+      strategy: 'write',
+      filePath: this.path,
+      content: this.entry.raw.content,
+      attributes: rest,
+    };
+  }
+
   /** 读取当前条目的元数据属性。 */
   async getattr(): Promise<Record<string, unknown>> {
     const worldbook = await getWorldbook(this.lorebookName);
@@ -117,5 +135,59 @@ export class LorebookEntryNode implements TextFileNode, AttributeNode, Deletable
       throw new ToolError('ENTRY_NOT_FOUND', `条目 '${this.path}' 不存在。`);
     }
     return updatedEntry as Record<string, unknown>;
+  }
+}
+
+export class CreatableLorebookEntryNode implements TextFileNode {
+  public readonly exists = false;
+  private createdUid?: number;
+
+  constructor(
+    public readonly worldbookName: string,
+    public readonly path: string,
+    public readonly entryPath: string,
+  ) {}
+
+  /** 返回一个尚未持久存在、但可通过 write 创建的世界书条目节点。 */
+  async stat(): Promise<NodeStat & { kind: 'file' }> {
+    return {
+      path: this.path,
+      name: basenameFromEntryPath(this.entryPath),
+      kind: 'file',
+      readable: false,
+      writable: true,
+    };
+  }
+
+  async read(): Promise<string> {
+    throw new ToolError('ENTRY_NOT_FOUND', `条目 '${this.path}' 不存在。`);
+  }
+
+  async write(content: string): Promise<void> {
+    const { new_entries } = await createWorldbookEntries(this.worldbookName, [
+      {
+        name: basenameFromEntryPath(this.entryPath),
+        content,
+      },
+    ]);
+    const created = new_entries[0];
+    this.createdUid = created.uid;
+    const reloaded = await loadRawWorldbook(this.worldbookName);
+    //@ts-expect-error 类型定义不符
+    const raw = findRawBookEntry(reloaded, entry => entry.uid === created.uid);
+    if (!raw) {
+      throw new ToolError('tool_use_error', '创建条目后无法在世界书中定位新条目。');
+    }
+    raw.comment = this.entryPath;
+    raw.content = content;
+    await saveRawWorldbook(this.worldbookName, reloaded);
+  }
+
+  async edit(): Promise<{ originalContent: string; updatedContent: string; replaceAll: boolean }> {
+    throw new ToolError('ENTRY_NOT_FOUND', `条目 '${this.path}' 不存在。`);
+  }
+
+  get uid() {
+    return this.createdUid;
   }
 }

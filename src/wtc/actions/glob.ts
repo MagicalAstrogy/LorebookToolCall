@@ -1,5 +1,5 @@
 import type { z } from 'zod';
-import { ensureLorebookPermission } from '@/wtc/permission';
+import { ensurePathPermission } from '@/wtc/permission';
 import { ToolError, invalidPathDetail } from '@/wtc/result';
 import { globArgsSchema } from '@/wtc/schema';
 import { globToRegExp, normalizeVirtualPath, parseVirtualPath, relativeFromBase } from '@/wtc/store';
@@ -23,7 +23,7 @@ function resolveGlobInputs(args: z.infer<typeof globArgsSchema>) {
   }
 
   const parsed = parseVirtualPath(args.pattern);
-  if (!parsed.worldbookName) {
+  if (parsed.rootKind !== 'lorebook') {
     return {
       basePath: parsed.normalized,
       pattern: '*',
@@ -31,8 +31,8 @@ function resolveGlobInputs(args: z.infer<typeof globArgsSchema>) {
   }
 
   return {
-    basePath: `/${parsed.worldbookName}`,
-    pattern: parsed.entryPath ?? '*',
+    basePath: `/Worldbooks/${parsed.entityName}`,
+    pattern: parsed.relativePath ?? '*',
   };
 }
 
@@ -44,26 +44,12 @@ export async function globAction(args: z.infer<typeof globArgsSchema>) {
     ]);
   }
 
-  let filenames: string[] = [];
-  if (basePath === '/') {
-    const root = await resolveDirectoryNode('/');
-    if (root) {
-      for await (const child of root.list()) {
-        filenames.push(isDirectoryNode(child) ? `${child.path}/` : child.path);
-      }
-    }
-  } else {
-    const { worldbookName } = parseVirtualPath(basePath);
-    if (!worldbookName) {
-      filenames = [];
-    } else {
-      await ensureLorebookPermission(worldbookName, 'read');
-      const directoryNode = await resolveDirectoryNode(basePath);
-      if (directoryNode) {
-        for await (const child of walkDirectory(directoryNode)) {
-          filenames.push(isDirectoryNode(child) ? `${child.path}/` : child.path);
-        }
-      }
+  await ensurePathPermission(basePath, 'read', { followCharacterWorldbook: true });
+  const directoryNode = await resolveDirectoryNode(basePath);
+  const filenames: string[] = [];
+  if (directoryNode) {
+    for await (const child of walkDirectory(directoryNode)) {
+      filenames.push(isDirectoryNode(child) ? `${child.path}/` : child.path);
     }
   }
 
@@ -73,18 +59,7 @@ export async function globAction(args: z.infer<typeof globArgsSchema>) {
     const relative = relativeFromBase(basePath, candidate).replace(/\/$/, '');
     return pattern.test(relative);
   });
-  const includeDirectoryAliases = basePath !== '/' && rawPattern.includes('**');
-  const output = new Set(matched);
-  if (includeDirectoryAliases) {
-    for (const candidate of matched) {
-      if (!candidate.endsWith('/')) {
-        continue;
-      }
-      // 递归 glob 下补一个无尾斜杠别名，兼容常见文件系统 glob 对目录名的返回方式。
-      output.add(candidate.slice(0, -1));
-    }
-  }
-  const result = [...output].sort();
+  const result = [...new Set(matched)].sort();
   return {
     filenames: result,
     durationMs: 0,

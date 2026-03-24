@@ -1,5 +1,10 @@
 # Node FS 结论
 
+## 术语
+
+对外文档统一使用 `Worldbook`。  
+本文中保留 `LorebookNode`、`LorebookEntryNode`、`LorebookView` 等名字，仅用于指代当前代码中的内部实现类型。
+
 ## 定位
 
 项目内部使用 node 树抽象世界书访问行为，而不是以路径式 VFS 作为核心模型。
@@ -115,6 +120,7 @@ export interface AttributeNode extends Node {
 - 表示单本世界书
 - 子节点可以是子目录，也可以是 `LorebookEntryNode`
 - 不提供 `mount`
+- 目录占据路径名；如果某个条目路径同时也是目录前缀，则该条目不会作为可见文件暴露，但会被计入文件语义冲突
 
 ### `LorebookEntryNode`
 
@@ -151,14 +157,24 @@ export interface LorebookView {
 - 同一次遍历、`resolve`、`walk`、`glob` 可以共享同一个 `view`
 - 不做跨操作的 `view` 复用
 
-生命周期：
+生命周期分层：
 
-- `RootNode` 可以长期存在
-- `LorebookNode` 可以长期存在，但不保存 `list()` 结果
-- `VirtualDirectoryNode` 是短生命周期对象
-- `LorebookEntryNode` 是短生命周期对象
-- `VirtualDirectoryNode` 与 `LorebookEntryNode` 都绑定到某一次 `view`
-- 同一路径在不同 `view` 中解析出的 node 不要求对象身份相同
+- 长期有效：只有 `RootNode`
+- 单次操作有效：`LorebookNode`、`VirtualDirectoryNode`、`LorebookEntryNode`
+- 绑定到 node：`LorebookView`
+
+语义说明：
+
+- “长期有效”表示可以跨多次 `glob`、`resolve`、`read`、`walk` 操作复用
+- “单次操作有效”表示对象只保证在一次 `glob`、`resolve`、`walk`、`grep` 或单次工具调用内自洽
+- “绑定到 node”表示对象不是独立暴露给外部的稳定实体，而是某个 node 的内部运行时状态
+
+进一步约束：
+
+- `LorebookNode` 不应被视为稳定持久对象；它只在当前一次路径解析或遍历过程中有效
+- `VirtualDirectoryNode` 与 `LorebookEntryNode` 都绑定到某一次单次操作中的 `view`
+- `LorebookView` 绑定到发起它的 node 及该次操作上下文，不跨操作复用
+- 同一路径在不同操作中解析出的 node 不要求对象身份相同
 
 表示方式：
 
@@ -200,6 +216,14 @@ export async function resolve(root: DirectoryNode, path: string): Promise<Node |
   return current;
 }
 ```
+
+约束：
+
+- 目录路径解析只依赖 `RootNode + getChild()`
+- 路径树中每个名字只对应一个可见节点
+- 如果底层存在“文件路径与目录路径同名”，则目录优先，文件不会作为可见节点参与层级解析
+- 这类同名文件仍要计入文件语义冲突；对该路径做文件访问或写入时应返回冲突错误
+- 这类文件不参与 `getChild()`、`list()`、`walk()`、`glob()`
 
 ## 遍历
 

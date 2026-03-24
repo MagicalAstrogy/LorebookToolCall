@@ -1,5 +1,6 @@
 import type { DirectoryNode, Node, NodeStat } from '@/wtc/node_fs/types';
-import { LorebookNode } from '@/wtc/node_fs/lorebook_node';
+import { CharactersRootNode } from '@/wtc/node_fs/characters_root_node';
+import { LorebooksRootNode } from '@/wtc/node_fs/lorebooks_root_node';
 
 export class RootNode implements DirectoryNode {
   public readonly path = '/';
@@ -15,22 +16,21 @@ export class RootNode implements DirectoryNode {
     };
   }
 
-  /** 按世界书名称读取根目录下的直接子节点。 */
+  /** 按固定目录名读取根目录下的直接子节点。 */
   async getChild(name: string): Promise<Node | null> {
-    if (!name || name.includes('/')) {
-      return null;
+    switch (name) {
+      case 'Worldbooks':
+        return new LorebooksRootNode();
+      case 'Characters':
+        return new CharactersRootNode();
+      default:
+        return null;
     }
-    if (!getWorldbookNames().includes(name) || name.includes('/')) {
-      return null;
-    }
-    return new LorebookNode(name);
   }
 
-  /** 列出根目录下所有可暴露给工具层的世界书节点。 */
+  /** 列出根目录下的两个固定子目录。 */
   async *list(): AsyncIterable<Node> {
-    // 根目录只暴露可映射成单一路径段的世界书名称。
-    for (const name of getWorldbookNames().filter(candidate => !candidate.includes('/')).sort()) {
-      yield new LorebookNode(name);
-    }
+    yield new CharactersRootNode();
+    yield new LorebooksRootNode();
   }
 }

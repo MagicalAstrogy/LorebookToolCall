@@ -25,10 +25,45 @@ export interface PathIndex {
   conflicts: Set<string>;
 }
 
+export const LOREBOOKS_ROOT_NAME = 'Worldbooks';
+export const CHARACTERS_ROOT_NAME = 'Characters';
+export const LOREBOOKS_ROOT_PATH = `/${LOREBOOKS_ROOT_NAME}`;
+export const CHARACTERS_ROOT_PATH = `/${CHARACTERS_ROOT_NAME}`;
+
+export type ParsedVirtualPath =
+  | {
+      normalized: '/';
+      rootKind: 'root';
+      entityName: null;
+      relativePath: null;
+    }
+  | {
+      normalized: string;
+      rootKind: 'lorebooks_root' | 'characters_root';
+      entityName: null;
+      relativePath: null;
+    }
+  | {
+      normalized: string;
+      rootKind: 'lorebook';
+      entityName: string;
+      relativePath: string | null;
+    }
+  | {
+      normalized: string;
+      rootKind: 'character';
+      entityName: string;
+      relativePath: string | null;
+    };
+
 type RawBook = SillyTavern.v2WorldInfoBook;
 
 // 同一本世界书上的写操作串行化，避免并发覆盖。
 const queueMap = new Map<string, Promise<void>>();
+
+export function isSafeSinglePathSegment(name: string) {
+  return name !== '' && name !== '.' && name !== '..' && !name.includes('/');
+}
 
 export function normalizeVirtualPath(input: string): string | null {
   // 虚拟路径按 POSIX 规则归一化，但不允许相对路径。
@@ -57,26 +92,70 @@ export function parseVirtualPath(input: string) {
     throw new ToolError('InputValidationError', '路径必须是绝对路径。', [invalidPathDetail(input)]);
   }
   if (normalized === '/') {
-    return { normalized, worldbookName: null, entryPath: null };
+    return {
+      normalized,
+      rootKind: 'root',
+      entityName: null,
+      relativePath: null,
+    } satisfies ParsedVirtualPath;
   }
-  // 第一段固定解释为世界书名，其余部分视为条目 comment 对应的虚拟路径。
-  const [worldbookName, ...rest] = normalized.slice(1).split('/');
-  return {
-    normalized,
-    worldbookName,
-    entryPath: rest.length > 0 ? rest.join('/') : null,
-  };
+  const [rootSegment, entityName, ...rest] = normalized.slice(1).split('/');
+  if (rootSegment === LOREBOOKS_ROOT_NAME) {
+    if (!entityName) {
+      return {
+        normalized,
+        rootKind: 'lorebooks_root',
+        entityName: null,
+        relativePath: null,
+      } satisfies ParsedVirtualPath;
+    }
+    return {
+      normalized,
+      rootKind: 'lorebook',
+      entityName,
+      relativePath: rest.length > 0 ? rest.join('/') : null,
+    } satisfies ParsedVirtualPath;
+  }
+  if (rootSegment === CHARACTERS_ROOT_NAME) {
+    if (!entityName) {
+      return {
+        normalized,
+        rootKind: 'characters_root',
+        entityName: null,
+        relativePath: null,
+      } satisfies ParsedVirtualPath;
+    }
+    return {
+      normalized,
+      rootKind: 'character',
+      entityName,
+      relativePath: rest.length > 0 ? rest.join('/') : null,
+    } satisfies ParsedVirtualPath;
+  }
+  throw new ToolError('InputValidationError', '路径必须位于 /Worldbooks 或 /Characters 下。', [invalidPathDetail(input)]);
 }
 
-export function requireFileTarget(input: string) {
+export function requireLorebookFileTarget(input: string) {
   const parsed = parseVirtualPath(input);
-  // 仅文件类工具可调用这里；根目录或世界书根路径都不算具体条目。
-  if (!parsed.worldbookName || !parsed.entryPath) {
-    throw new ToolError('InputValidationError', 'file_path 必须指向具体条目，而不是世界书根路径。', [
+  // 仅 Worldbook 条目文件类工具可调用这里；根目录、集合目录或 Worldbook 根路径都不算具体条目。
+  if (parsed.rootKind !== 'lorebook' || !parsed.relativePath) {
+    throw new ToolError('InputValidationError', 'file_path 必须指向 /Worldbooks 下的具体条目，而不是目录路径。', [
       invalidPathDetail(input),
     ]);
   }
-  return parsed as { normalized: string; worldbookName: string; entryPath: string };
+  return {
+    normalized: parsed.normalized,
+    worldbookName: parsed.entityName,
+    entryPath: parsed.relativePath,
+  };
+}
+
+export function toLorebookRootPath(worldbookName: string) {
+  return `${LOREBOOKS_ROOT_PATH}/${worldbookName}`;
+}
+
+export function toCharacterRootPath(characterName: string) {
+  return `${CHARACTERS_ROOT_PATH}/${characterName}`;
 }
 
 export async function loadRawWorldbook(worldbookName: string): Promise<RawBook> {
@@ -123,19 +202,19 @@ export async function withWorldbookQueue<T>(worldbookName: string, action: () =>
   }
 }
 
-export function buildPathIndex(worldbookName: string, book: RawBook): PathIndex {
+export function buildPathIndex(worldbookName: string, book: RawBook, basePath = toLorebookRootPath(worldbookName)): PathIndex {
   // 世界书里的 comment 被视为虚拟文件路径；同时派生目录集合和冲突集合。
   const exactFiles = new Map<string, IndexedEntry>();
   const conflicts = new Set<string>();
   const files: IndexedEntry[] = [];
-  const directories = new Set<string>([`/${worldbookName}/`]);
+  const directories = new Set<string>([`${basePath}/`]);
 
   for (const raw of getRawBookEntries(book)) {
-    const normalized = normalizeVirtualPath(`/${worldbookName}/${raw.comment ?? ''}`);
-    if (!normalized || normalized === `/${worldbookName}`) {
+    const normalized = normalizeVirtualPath(`${basePath}/${raw.comment ?? ''}`);
+    if (!normalized || normalized === basePath) {
       continue;
     }
-    const entryPath = normalized.slice(worldbookName.length + 2);
+    const entryPath = normalized.slice(basePath.length + 1);
     const indexed: IndexedEntry = {
       filePath: normalized,
       entryPath,
@@ -153,7 +232,7 @@ export function buildPathIndex(worldbookName: string, book: RawBook): PathIndex 
 
     const parts = entryPath.split('/');
     for (let index = 0; index < parts.length - 1; index += 1) {
-      directories.add(`/${worldbookName}/${parts.slice(0, index + 1).join('/')}/`);
+      directories.add(`${basePath}/${parts.slice(0, index + 1).join('/')}/`);
     }
   }
 
@@ -185,10 +264,8 @@ export function listCandidatesUnder(index: PathIndex, basePath: string) {
   const candidates = new Set<string>();
 
   if (normalizedBase === '/') {
-    // 根目录只暴露可被工具层识别的世界书，不处理名称里自带 / 的异常情况。
-    for (const name of getWorldbookNames().filter(name => !name.includes('/'))) {
-      candidates.add(`/${name}/`);
-    }
+    candidates.add(`${CHARACTERS_ROOT_PATH}/`);
+    candidates.add(`${LOREBOOKS_ROOT_PATH}/`);
     return [...candidates].sort();
   }
 

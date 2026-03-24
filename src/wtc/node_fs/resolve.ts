@@ -1,85 +1,134 @@
-import type { DirectoryNode } from '@/wtc/node_fs/types';
-import { normalizeVirtualPath } from '@/wtc/store';
-import { directoryExistsInView, openLorebookView } from '@/wtc/node_fs/view';
-import { entryForFilePath, findDirectoryFileSpan } from '@/wtc/node_fs/helpers';
-import { RootNode } from '@/wtc/node_fs/root_node';
+import type { DirectoryNode, Node, TextFileNode } from '@/wtc/node_fs/types';
+import {
+  isDirectoryNode,
+  isTextFileNode,
+  isWritableDirectoryNode,
+} from '@/wtc/node_fs/types';
+import { resolveWorldbookBackedFileTarget } from '@/wtc/fs_bind';
+import { ConflictTextFileNode } from '@/wtc/node_fs/character_child_nodes';
 import { LorebookNode } from '@/wtc/node_fs/lorebook_node';
-import { LorebookEntryNode } from '@/wtc/node_fs/lorebook_entry_node';
+import { RootNode } from '@/wtc/node_fs/root_node';
 import { VirtualDirectoryNode } from '@/wtc/node_fs/virtual_directory_node';
+import { openLorebookView } from '@/wtc/node_fs/view';
+import { normalizeVirtualPath } from '@/wtc/store';
 
-/** 按目录语义解析一个绝对路径。 */
-export async function resolveDirectoryNode(path: string): Promise<DirectoryNode | null> {
-  // 目录解析与文件解析分离，避免同名文件/目录并存时语义混淆。
+function splitPathSegments(path: string) {
+  if (path === '/') {
+    return [];
+  }
+  return path.slice(1).split('/').filter(segment => segment !== '');
+}
+
+async function createImplicitWritableDirectoryNode(parent: DirectoryNode, name: string): Promise<DirectoryNode | null> {
+  const childPath = normalizeVirtualPath(`${parent.path.replace(/\/+$/, '')}/${name}`);
+  if (!childPath) {
+    return null;
+  }
+  if (parent instanceof LorebookNode) {
+    const view = await parent.openView();
+    return new VirtualDirectoryNode(view, childPath, 0, 0);
+  }
+  if (parent instanceof VirtualDirectoryNode) {
+    return new VirtualDirectoryNode(parent.view, childPath, 0, 0);
+  }
+  return null;
+}
+
+/** 从根节点出发，按路径段逐级调用 `getChild()` 解析任意节点。 */
+export async function resolveNode(path: string): Promise<Node | null> {
   const normalized = normalizeVirtualPath(path);
   if (!normalized) {
     return null;
   }
-  if (normalized === '/') {
-    return new RootNode();
+
+  let current: Node = new RootNode();
+  for (const segment of splitPathSegments(normalized)) {
+    if (!isDirectoryNode(current)) {
+      return null;
+    }
+    const next = await current.getChild(segment);
+    if (!next) {
+      return null;
+    }
+    current = next;
   }
 
-  const segments = normalized.slice(1).split('/');
-  const lorebookName = segments[0];
-  const lorebook = new LorebookNode(lorebookName);
-  if (segments.length === 1) {
-    await lorebook.openView();
-    return lorebook;
-  }
+  return current;
+}
 
-  const view = await lorebook.openView();
-  if (!directoryExistsInView(view, normalized)) {
-    return null;
-  }
-  const { fileStart, fileEnd } = findDirectoryFileSpan(view, normalized);
-  return new VirtualDirectoryNode(view, normalized, fileStart, fileEnd);
+/** 按目录语义解析一个绝对路径。 */
+export async function resolveDirectoryNode(path: string): Promise<DirectoryNode | null> {
+  const node = await resolveNode(path);
+  return node && isDirectoryNode(node) ? node : null;
 }
 
 /** 按文件语义解析一个绝对路径。 */
-export async function resolveFileNode(path: string): Promise<LorebookEntryNode | null> {
-  // 文件解析只接受精确文件路径，不把目录视为同一路径上的可替代结果。
+export async function resolveFileNode(path: string): Promise<TextFileNode | null> {
   const normalized = normalizeVirtualPath(path);
   if (!normalized || normalized === '/') {
     return null;
   }
-  const segments = normalized.slice(1).split('/');
-  if (segments.length < 2) {
-    return null;
+
+  const worldbookTarget = await resolveWorldbookBackedFileTarget(normalized);
+  if (worldbookTarget) {
+    const view = await openLorebookView(worldbookTarget.worldbookName);
+    if (view.conflicts.has(worldbookTarget.targetPath)) {
+      return new ConflictTextFileNode(worldbookTarget.logicalPath);
+    }
   }
-  const lorebookName = segments[0];
-  const view = await openLorebookView(lorebookName);
-  const entry = entryForFilePath(view, normalized);
-  return entry ? new LorebookEntryNode(view, entry) : null;
+
+  const node = await resolveNode(path);
+  return node && isTextFileNode(node) ? node : null;
 }
 
-/** 按搜索语义解析一个绝对路径，允许同时命中文件节点和目录节点。 */
+/** 按搜索语义解析一个绝对路径。 */
 export async function resolveSearchScope(path: string): Promise<{
-  fileNode: LorebookEntryNode | null;
+  fileNode: TextFileNode | null;
   directoryNode: DirectoryNode | null;
 }> {
-  // 搜索场景允许同一路径同时命中文件节点与目录节点，供 grep 统一处理。
-  const normalized = normalizeVirtualPath(path);
-  if (!normalized || normalized === '/') {
-    return {
-      fileNode: null,
-      directoryNode: null,
-    };
-  }
-  const segments = normalized.slice(1).split('/');
-  const lorebookName = segments[0];
-  const view = await openLorebookView(lorebookName);
-  const fileEntry = segments.length > 1 ? entryForFilePath(view, normalized) : null;
-  const fileNode = fileEntry ? new LorebookEntryNode(view, fileEntry) : null;
-  const directoryNode =
-    segments.length === 1
-      ? new LorebookNode(lorebookName)
-      : directoryExistsInView(view, normalized)
-        ? (() => {
-            const { fileStart, fileEnd } = findDirectoryFileSpan(view, normalized);
-            return new VirtualDirectoryNode(view, normalized, fileStart, fileEnd);
-          })()
-        : null;
+  const [fileNode, directoryNode] = await Promise.all([
+    resolveFileNode(path),
+    resolveDirectoryNode(path),
+  ]);
   return {
     fileNode,
     directoryNode,
   };
+}
+
+/** 按写入语义解析一个绝对路径；允许在父目录支持时返回 create-on-write 占位文件节点。 */
+export async function resolveWritableFileNode(path: string): Promise<TextFileNode | null> {
+  const normalized = normalizeVirtualPath(path);
+  if (!normalized || normalized === '/') {
+    return null;
+  }
+
+  const existing = await resolveFileNode(normalized);
+  if (existing) {
+    return existing;
+  }
+
+  const segments = splitPathSegments(normalized);
+  if (segments.length === 0) {
+    return null;
+  }
+  const fileName = segments[segments.length - 1];
+  let current: Node = new RootNode();
+  for (const segment of segments.slice(0, -1)) {
+    if (!isDirectoryNode(current)) {
+      return null;
+    }
+    let next = await current.getChild(segment);
+    if (!next) {
+      next = await createImplicitWritableDirectoryNode(current, segment);
+    }
+    if (!next || !isDirectoryNode(next)) {
+      return null;
+    }
+    current = next;
+  }
+  if (!isWritableDirectoryNode(current)) {
+    return null;
+  }
+  return current.getWritableChild(fileName);
 }
