@@ -1,10 +1,11 @@
 import type { z } from 'zod';
-import { ensureLorebookPermission } from '@/wtc/permission';
-import { ToolError } from '@/wtc/result';
+import { ensurePathPermission } from '@/wtc/permission';
+import { ToolError, invalidPathDetail } from '@/wtc/result';
 import { decodeWorldbookEntryPatchSpecialValues, encodeWorldbookEntryPatchSpecialValues, setAttributeArgsSchema } from '@/wtc/schema';
-import { applyWorldbookPatch, ensureNoConflict, requireFileTarget, withWorldbookQueue } from '@/wtc/store';
-import { getIndexForWorldbook } from '@/wtc/actions/shared';
-
+import { normalizeVirtualPath, withWorldbookQueue } from '@/wtc/store';
+import { resolveFileNode } from '@/wtc/node_fs/nodes';
+import { isAttributeNode } from '@/wtc/node_fs/types';
+import { resolveWorldbookBackedFileTarget } from '@/wtc/fs_bind';
 type ReturnedAttributes = Record<string, unknown> & { comment?: never; content?: never };
 type DeleteMarker = { __delete: true };
 type RollbackPatch = Record<string, unknown>;
@@ -98,7 +99,7 @@ export type SetAttributeBackup = {
  * 它会按 lossy patch 语义，仅恢复本次改动过的字段，不覆盖其他后续改动。
  */
 export async function setAttributeRollback(backup: SetAttributeBackup) {
-  await ensureLorebookPermission(backup.worldbookName, 'write');
+  await ensurePathPermission(backup.filePath, 'write', { followCharacterWorldbook: true });
   return withWorldbookQueue(backup.worldbookName, async () => {
     let restoredEntry: WorldbookEntry | undefined;
     await updateWorldbookWith(backup.worldbookName, worldbook => {
@@ -130,32 +131,28 @@ export async function setAttributeRollback(backup: SetAttributeBackup) {
 }
 
 export async function setAttributeAction(args: z.infer<typeof setAttributeArgsSchema>) {
-  const { normalized, worldbookName } = requireFileTarget(args.file_path);
+  const normalized = normalizeVirtualPath(args.file_path);
+  if (!normalized) {
+    throw new ToolError('InputValidationError', 'file_path 必须是绝对路径。', [invalidPathDetail(args.file_path)]);
+  }
   const normalizedAttributes = decodeWorldbookEntryPatchSpecialValues(args.attributes);
-  await ensureLorebookPermission(worldbookName, 'write');
+  await ensurePathPermission(normalized, 'write', { followCharacterWorldbook: true });
 
+  const node = await resolveFileNode(normalized);
+  if (!node) {
+    throw new ToolError('ENTRY_NOT_FOUND', `条目 '${normalized}' 不存在。`);
+  }
+  if (!isAttributeNode(node)) {
+    throw new ToolError('InputValidationError', '当前路径不支持属性修改。', [invalidPathDetail(args.file_path)]);
+  }
+  const worldbookTarget = await resolveWorldbookBackedFileTarget(normalized);
+  if (!worldbookTarget) {
+    throw new ToolError('InputValidationError', '当前路径不支持属性修改。', [invalidPathDetail(args.file_path)]);
+  }
+  const worldbookName = worldbookTarget.worldbookName;
   return withWorldbookQueue(worldbookName, async () => {
-    const { index } = await getIndexForWorldbook(worldbookName);
-    ensureNoConflict(index, normalized);
-    const existing = index.exactFiles.get(normalized);
-    if (!existing) {
-      throw new ToolError('ENTRY_NOT_FOUND', `条目 '${normalized}' 不存在。`);
-    }
-
-    let updatedEntry: WorldbookEntry | undefined;
-    let previousEntry: WorldbookEntry | undefined;
-    // 直接在高层条目对象上应用 patch，保持字段语义与 WorldbookEntry 一致。
-    await updateWorldbookWith(worldbookName, worldbook =>
-      worldbook.map(entry => {
-        if (entry.uid !== existing.uid) {
-          return entry;
-        }
-        previousEntry = structuredClone(entry);
-        updatedEntry = applyWorldbookPatch(entry, normalizedAttributes);
-        return updatedEntry;
-      }),
-    );
-
+    const previousEntry = (await node.getattr()) as WorldbookEntry;
+    const updatedEntry = (await node.setattr(normalizedAttributes)) as WorldbookEntry;
     if (!updatedEntry || !previousEntry) {
       throw new ToolError('tool_use_error', '更新条目属性失败。');
     }
@@ -167,7 +164,7 @@ export async function setAttributeAction(args: z.infer<typeof setAttributeArgsSc
         rollbackMethod: 'setAttributeRollback' as const,
         worldbookName,
         filePath: normalized,
-        uid: existing.uid,
+        uid: (node as unknown as { uid: number }).uid,
         rollbackPatch: buildRollbackPatchFromPrevious(normalizedAttributes, previousEntry),
       },
     };

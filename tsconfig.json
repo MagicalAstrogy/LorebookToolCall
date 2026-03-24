@@ -1,25 +1,14 @@
 {
   "compilerOptions": {
-    "types": [
-      "jquery",
-      "jqueryui",
-      "lodash",
-      "toastr",
-      "type-fest",
-      "yaml",
-      "zod",
-    ],
+    "types": ["jquery", "jqueryui", "lodash", "toastr", "type-fest", "yaml", "zod"],
+    "skipLibCheck": true,
     "target": "ESNext",
     "module": "ESNext",
     "outDir": "dist",
     "baseUrl": ".",
     "paths": {
-      "@util/*": [
-        "./util/*"
-      ],
-      "@/*": [
-        "./src/*"
-      ]
+      "@util/*": ["./util/*"],
+      "@/*": ["./src/*"]
     },
     "moduleDetection": "auto",
     "moduleResolution": "bundler",
@@ -49,5 +38,6 @@
   "exclude": [
     "**/dist/**",
     "**/node_modules/**",
+    "tavern_sync.mjs"
   ]
 }

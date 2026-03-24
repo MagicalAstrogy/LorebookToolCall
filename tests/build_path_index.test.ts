@@ -24,10 +24,10 @@ describe('buildPathIndex', () => {
     //@ts-expect-error 类型定义不符
     const index = buildPathIndex('设定集', book);
 
-    expect(index.files.map(file => file.filePath)).toStrictEqual(['/设定集/章节/正文', '/设定集/附录']);
-    expect(index.directories).toContain('/设定集/');
-    expect(index.directories).toContain('/设定集/章节/');
-    expect(index.exactFiles.get('/设定集/章节/正文')?.uid).toBe(1);
-    expect(index.exactFiles.get('/设定集/附录')?.uid).toBe(2);
+    expect(index.files.map(file => file.filePath)).toStrictEqual(['/Worldbooks/设定集/章节/正文', '/Worldbooks/设定集/附录']);
+    expect(index.directories).toContain('/Worldbooks/设定集/');
+    expect(index.directories).toContain('/Worldbooks/设定集/章节/');
+    expect(index.exactFiles.get('/Worldbooks/设定集/章节/正文')?.uid).toBe(1);
+    expect(index.exactFiles.get('/Worldbooks/设定集/附录')?.uid).toBe(2);
   });
 });

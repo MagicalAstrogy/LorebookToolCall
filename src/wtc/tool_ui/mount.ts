@@ -109,14 +109,6 @@ function cleanupMessage(messageId: number) {
     }
   }
 }
-//
-function rerenderMessage(messageId: number) {
-  cleanupMessage(messageId);
-  const invocations = SillyTavern.chat[messageId]?.extra?.tool_invocations;
-  if (Array.isArray(invocations)) {
-    renderToolCalls(invocations);
-  }
-}
 
 function backfillVisibleToolCalls() {
   // 只补挂当前页面上已经渲染出来的连续楼层；一旦撞到未加载的历史楼层就停止向前扫描。

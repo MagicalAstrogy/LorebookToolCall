@@ -1,15 +1,39 @@
 import type { z } from 'zod';
-import { ensureLorebookPermission } from '@/wtc/permission';
+import { ensurePathPermission } from '@/wtc/permission';
 import { ToolError, invalidPathDetail } from '@/wtc/result';
 import { globArgsSchema } from '@/wtc/schema';
-import {
-  globToRegExp,
-  listCandidatesUnder,
-  normalizeVirtualPath,
-  parseVirtualPath,
-  relativeFromBase,
-} from '@/wtc/store';
-import { getIndexForWorldbook } from '@/wtc/actions/shared';
+import { globToRegExp, normalizeVirtualPath, relativeFromBase } from '@/wtc/store';
+import { resolveDirectoryNode } from '@/wtc/node_fs/nodes';
+import { isDirectoryNode } from '@/wtc/node_fs/types';
+import { walkDirectory } from '@/wtc/node_fs/walk';
+
+function splitAbsoluteGlobPattern(pattern: string) {
+  const normalized = normalizeVirtualPath(pattern);
+  if (!normalized) {
+    return {
+      basePath: null,
+      pattern: '*',
+    };
+  }
+  if (normalized === '/') {
+    return {
+      basePath: normalized,
+      pattern: '*',
+    };
+  }
+  const trimmed = normalized.replace(/\/+$/, '');
+  const lastSlashIndex = trimmed.lastIndexOf('/');
+  if (lastSlashIndex <= 0) {
+    return {
+      basePath: '/',
+      pattern: trimmed.slice(1) || '*',
+    };
+  }
+  return {
+    basePath: trimmed.slice(0, lastSlashIndex),
+    pattern: trimmed.slice(lastSlashIndex + 1) || '*',
+  };
+}
 
 function resolveGlobInputs(args: z.infer<typeof globArgsSchema>) {
   if (args.path) {
@@ -26,18 +50,7 @@ function resolveGlobInputs(args: z.infer<typeof globArgsSchema>) {
     };
   }
 
-  const parsed = parseVirtualPath(args.pattern);
-  if (!parsed.worldbookName) {
-    return {
-      basePath: parsed.normalized,
-      pattern: '*',
-    };
-  }
-
-  return {
-    basePath: `/${parsed.worldbookName}`,
-    pattern: parsed.entryPath ?? '*',
-  };
+  return splitAbsoluteGlobPattern(args.pattern);
 }
 
 export async function globAction(args: z.infer<typeof globArgsSchema>) {
@@ -48,18 +61,12 @@ export async function globAction(args: z.infer<typeof globArgsSchema>) {
     ]);
   }
 
-  let filenames: string[];
-  if (basePath === '/') {
-    // 根目录下只列世界书目录，不需要先读取具体某一本世界书。
-    filenames = listCandidatesUnder({ files: [], directories: [], exactFiles: new Map(), conflicts: new Set() }, '/');
-  } else {
-    const { worldbookName } = parseVirtualPath(basePath);
-    if (!worldbookName) {
-      filenames = [];
-    } else {
-      await ensureLorebookPermission(worldbookName, 'read');
-      const { index } = await getIndexForWorldbook(worldbookName);
-      filenames = listCandidatesUnder(index, basePath);
+  await ensurePathPermission(basePath, 'read', { followCharacterWorldbook: true });
+  const directoryNode = await resolveDirectoryNode(basePath);
+  const filenames: string[] = [];
+  if (directoryNode) {
+    for await (const child of walkDirectory(directoryNode)) {
+      filenames.push(isDirectoryNode(child) ? `${child.path}/` : child.path);
     }
   }
 
@@ -69,18 +76,7 @@ export async function globAction(args: z.infer<typeof globArgsSchema>) {
     const relative = relativeFromBase(basePath, candidate).replace(/\/$/, '');
     return pattern.test(relative);
   });
-  const includeDirectoryAliases = basePath !== '/' && rawPattern.includes('**');
-  const output = new Set(matched);
-  if (includeDirectoryAliases) {
-    for (const candidate of matched) {
-      if (!candidate.endsWith('/')) {
-        continue;
-      }
-      // 递归 glob 下补一个无尾斜杠别名，兼容常见文件系统 glob 对目录名的返回方式。
-      output.add(candidate.slice(0, -1));
-    }
-  }
-  const result = [...output].sort();
+  const result = [...new Set(matched)].sort();
   return {
     filenames: result,
     durationMs: 0,

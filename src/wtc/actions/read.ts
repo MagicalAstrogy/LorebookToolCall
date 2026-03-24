@@ -1,14 +1,34 @@
 import type { z } from 'zod';
-import { ensureLorebookPermission } from '@/wtc/permission';
-import { ToolError } from '@/wtc/result';
+import { ensurePathPermission } from '@/wtc/permission';
+import { ToolError, invalidPathDetail } from '@/wtc/result';
 import { readArgsSchema } from '@/wtc/schema';
-import { requireFileTarget, toCatNumberedText } from '@/wtc/store';
-import { readEntryContent } from '@/wtc/actions/shared';
+import { normalizeVirtualPath, parseVirtualPath, toCatNumberedText } from '@/wtc/store';
+import { resolveDirectoryNode, resolveFileNode } from '@/wtc/node_fs/nodes';
 
 export async function readAction(args: z.infer<typeof readArgsSchema>) {
-  const { normalized, worldbookName } = requireFileTarget(args.file_path);
-  await ensureLorebookPermission(worldbookName, 'read');
-  const content = await readEntryContent(normalized);
+  const normalized = normalizeVirtualPath(args.file_path);
+  if (!normalized) {
+    throw new ToolError('InputValidationError', 'file_path 必须是绝对路径。', [invalidPathDetail(args.file_path)]);
+  }
+  await ensurePathPermission(normalized, 'read', { followCharacterWorldbook: true });
+  const parsed = parseVirtualPath(normalized);
+  if (
+    parsed.rootKind === 'root' ||
+    parsed.rootKind === 'lorebooks_root' ||
+    parsed.rootKind === 'characters_root' ||
+    parsed.rootKind === 'schemas_root' ||
+    ((parsed.rootKind === 'lorebook' || parsed.rootKind === 'character') && parsed.relativePath === null)
+  ) {
+    throw new ToolError('InputValidationError', 'Read 只接受具体文件路径，不能读取目录。', [invalidPathDetail(args.file_path)]);
+  }
+  const node = await resolveFileNode(normalized);
+  if (!node) {
+    if (await resolveDirectoryNode(normalized)) {
+      throw new ToolError('InputValidationError', 'Read 只接受具体文件路径，不能读取目录。', [invalidPathDetail(args.file_path)]);
+    }
+    throw new ToolError('ENTRY_NOT_FOUND', `条目 '${normalized}' 不存在。`);
+  }
+  const content = await node.read();
 
   const offset = args.offset ?? 0;
   const limit = args.limit ?? 0;

@@ -26,9 +26,9 @@ describe('getAttributeAction', () => {
       },
     });
 
-    const result = await getAttributeAction({ file_path: '/设定集/正文' });
+    const result = await getAttributeAction({ file_path: '/Worldbooks/设定集/正文' });
 
-    expect(result.filePath).toBe('/设定集/正文');
+    expect(result.filePath).toBe('/Worldbooks/设定集/正文');
     expect(result.attributes.uid).toBe(1);
     expect(result.attributes.enabled).toBe(false);
     expect(result.attributes.probability).toBe(42);
@@ -68,7 +68,7 @@ describe('getAttributeAction', () => {
       },
     });
 
-    const result = await getAttributeAction({ file_path: '/设定集/正文' });
+    const result = await getAttributeAction({ file_path: '/Worldbooks/设定集/正文' });
 
     expect((result.attributes.strategy as any).scan_depth).toBe(WORLDBOOK_ENTRY_PATCH_SCAN_DEPTH_SAME_AS_GLOBAL);
     expect((result.attributes.recursion as any).delay_until).toBe(WORLDBOOK_ENTRY_PATCH_NULL_SENTINEL);
@@ -84,8 +84,35 @@ describe('getAttributeAction', () => {
       },
     });
 
-    const error = await expectToolError(getAttributeAction({ file_path: '/设定集/正文' }));
+    const error = await expectToolError(getAttributeAction({ file_path: '/Worldbooks/设定集/正文' }));
 
     expect(error.errorType).toBe('ENTRY_NOT_FOUND');
+  });
+
+  test('supports reading worldbook attributes through character WorldBook alias', async () => {
+    installMockSillyTavern({
+      books: {
+        设定集: buildBook([
+          {
+            uid: 1,
+            comment: '正文',
+            content: '内容',
+            attributes: { enabled: false, probability: 42 },
+          },
+        ]),
+      },
+      characters: {
+        Alice: {
+          worldbook: '设定集',
+        },
+      },
+    });
+
+    const result = await getAttributeAction({ file_path: '/Characters/Alice/WorldBook/正文' });
+
+    expect(result.filePath).toBe('/Characters/Alice/WorldBook/正文');
+    expect(result.attributes.uid).toBe(1);
+    expect(result.attributes.enabled).toBe(false);
+    expect(result.attributes.probability).toBe(42);
   });
 });

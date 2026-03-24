@@ -2,24 +2,24 @@ import { z } from 'zod';
 
 // 这里定义的 schema 同时服务于运行时参数校验和工具注册时的 JSON Schema 导出。
 const globPathDescription =
-  '要搜索的虚拟目录路径。使用绝对路径，如 "/设定集"；省略时默认为根目录 "/"。如果 pattern 本身写成 "/<LorebookName>/*" 这类绝对形式，则会自动把世界书名拆到 path 中。';
+  '要搜索的虚拟目录路径。使用绝对路径，如 "/Worldbooks/设定集"、"/Characters/角色名" 或 "/Schemas"；省略时默认为根目录 "/"。';
 const entryPathDescription =
-  '世界书条目的绝对虚拟路径，如 "/设定集/NPC/理理"。只接受条目路径，不接受世界书根或虚拟目录。';
+  '世界书条目的绝对虚拟路径，如 "/WorldBooks/设定集/NPC/理理"。只接受条目路径，不接受世界书根或虚拟目录。';
 
 export const globArgsSchema = z
   .object({
     pattern: z
       .string()
       .min(1)
-      .describe('用于匹配文件名的 glob 模式，例如 "*"、"**/*"、"[mvu_update]*"。当未提供 path 时，也兼容 "/<LorebookName>/*" 这类绝对写法，并会自动拆分为 path + 相对 pattern。'),
-    path: z.string().optional().describe(globPathDescription),
+      .describe('用于匹配文件名的 glob 模式，例如 "*"、"**/*"、"[mvu_update]*"。若不提供 path，也兼容绝对写法，如 "/Schemas/*"。'),
+    path: z.string().describe(globPathDescription),
   })
   .describe('Glob 工具参数：按名称模式列出虚拟世界书文件系统中的文件或目录。');
 
 export const grepArgsSchema = z
   .object({
     pattern: z.string().min(1).describe('用于搜索条目内容的正则表达式模式。'),
-    path: z.string().min(1).describe('搜索起点的绝对虚拟路径，必须位于某一本确定的世界书内，不能是根目录 "/"。'),
+    path: z.string().min(1).describe('搜索起点的绝对虚拟路径，必须位于某一个确定的 "/Worldbooks/<Name>" 或 "/Characters/<Name>" 子树内，不能是根目录 "/" 或集合根目录。'),
     glob: z.string().optional().describe('用于过滤候选条目路径的 glob 模式，匹配基于 path 的相对路径。'),
     type: z.string().optional().describe('按文件扩展名近似过滤的类型名，如 "ts"、"js"、"json"、"md"、"yaml"。'),
     output_mode: z
@@ -36,7 +36,7 @@ export const grepArgsSchema = z
     offset: z.number().int().nonnegative().optional().describe('跳过前 N 条结果或内容块后再开始返回；默认从 0 开始。'),
     multiline: z.boolean().optional().describe('是否启用多行正则模式，让模式可以跨越换行匹配。'),
   })
-  .describe('Grep 工具参数：在虚拟世界书文件系统中按内容搜索条目。');
+  .describe('Grep 工具参数：在虚拟文件系统中按内容搜索条目。');
 
 export const readArgsSchema = z
   .object({

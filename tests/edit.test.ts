@@ -16,13 +16,13 @@ describe('editAction', () => {
     });
 
     const result = await editAction({
-      file_path: '/设定集/正文',
+      file_path: '/Worldbooks/设定集/正文',
       old_string: 'world',
       new_string: 'jest',
     });
 
     expect(result).toMatchObject({
-      filePath: '/设定集/正文',
+      filePath: '/Worldbooks/设定集/正文',
       oldString: 'world',
       newString: 'jest',
       originalFile: 'hello world',
@@ -31,9 +31,7 @@ describe('editAction', () => {
     });
     expect(result.backup).toMatchObject({
       rollbackMethod: 'editRollback',
-      worldbookName: '设定集',
-      filePath: '/设定集/正文',
-      uid: 1,
+      filePath: '/Worldbooks/设定集/正文',
       originalContent: 'hello world',
     });
     expect(result.originalFileNotice).toBeUndefined();
@@ -49,7 +47,7 @@ describe('editAction', () => {
 
     const error = await expectToolError(
       editAction({
-        file_path: '/设定集/正文',
+        file_path: '/Worldbooks/设定集/正文',
         old_string: 'hello',
         new_string: 'hi',
       }),
@@ -68,7 +66,7 @@ describe('editAction', () => {
 
     const error = await expectToolError(
       editAction({
-        file_path: '/设定集/正文',
+        file_path: '/Worldbooks/设定集/正文',
         old_string: 'zzz',
         new_string: 'hi',
       }),
@@ -86,7 +84,7 @@ describe('editAction', () => {
     });
 
     const result = await editAction({
-      file_path: '/设定集/正文',
+      file_path: '/Worldbooks/设定集/正文',
       old_string: 'TAIL',
       new_string: 'DONE',
     });
@@ -104,12 +102,67 @@ describe('editAction', () => {
     });
 
     const result = await editAction({
-      file_path: '/设定集/正文',
+      file_path: '/Worldbooks/设定集/正文',
       old_string: 'world',
       new_string: 'jest',
     });
     await editRollback(result.backup);
 
     expect(mock.worldbooks.get('设定集')?.[0]?.content).toBe('hello world');
+  });
+
+  test('edits character Regex files against the mapped YFM text', async () => {
+    const mock = installMockSillyTavern({
+      characters: {
+        Alice: {
+          extensions: {
+            regex_scripts: [
+              {
+                id: 'regex-1',
+                script_name: 'Normalize',
+                enabled: true,
+                find_regex: 'foo',
+                replace_string: 'bar',
+                trim_strings: [],
+                source: {
+                  user_input: true,
+                  ai_output: false,
+                  slash_command: false,
+                  world_info: false,
+                },
+                destination: {
+                  display: true,
+                  prompt: false,
+                },
+                run_on_edit: false,
+                min_depth: null,
+                max_depth: null,
+              },
+            ],
+          },
+        },
+      },
+    });
+
+    const result = await editAction({
+      file_path: '/Characters/Alice/Regex/Normalize',
+      old_string: 'find_regex: foo',
+      new_string: 'find_regex: baz',
+    });
+
+    expect(result.filePath).toBe('/Characters/Alice/Regex/Normalize');
+    expect(result.originalFile).toContain('find_regex: foo');
+    expect(mock.characters.get('Alice')?.extensions.regex_scripts?.[0]).toMatchObject({
+      script_name: 'Normalize',
+      find_regex: 'baz',
+      replace_string: 'bar',
+    });
+
+    await editRollback(result.backup);
+    expect(mock.characters.get('Alice')?.extensions.regex_scripts?.[0]).toMatchObject({
+      script_name: 'Normalize',
+      find_regex: 'foo',
+      replace_string: 'bar',
+    });
   });
 });
