@@ -63,6 +63,16 @@ export interface WorldbookBackedFileTarget {
   entryPath: string;
 }
 
+const tavernRegexTrimStringsSchema = z.preprocess(value => {
+  if (Array.isArray(value)) {
+    return value;
+  }
+  if (typeof value === 'string') {
+    return value === '' ? [] : [value];
+  }
+  return value;
+}, z.array(z.string()));
+
 export const tavernRegexSchema = z
   .object({
     id: z.string(),
@@ -71,7 +81,7 @@ export const tavernRegexSchema = z
     scope: z.enum(['global', 'character']).optional(),
     find_regex: z.string(),
     replace_string: z.string(),
-    trim_strings: z.string(),
+    trim_strings: tavernRegexTrimStringsSchema,
     source: z.object({
       user_input: z.boolean(),
       ai_output: z.boolean(),
@@ -178,7 +188,7 @@ function createDefaultCharacterRegexFrontMatter(): z.infer<typeof tavernRegexFro
     id: allocateId('regex'),
     enabled: true,
     find_regex: '',
-    trim_strings: '',
+    trim_strings: [],
     source: {
       user_input: false,
       ai_output: false,

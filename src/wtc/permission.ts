@@ -1,7 +1,8 @@
 import { ToolError } from '@/wtc/result';
 import { CHARACTERS_ROOT_PATH, LOREBOOKS_ROOT_PATH, normalizeVirtualPath, parseVirtualPath } from '@/wtc/store';
+import { readonly, shallowReactive } from 'vue';
 
-type PermissionLevel = 1 | 2 | 3;
+export type PermissionLevel = 1 | 2 | 3;
 
 type PermissionScope = {
   cacheKey: string;
@@ -10,8 +11,19 @@ type PermissionScope = {
   name: string;
 };
 
+export interface GrantedPermission {
+  cacheKey: string;
+  displayPath: string;
+  kind: PermissionScope['kind'];
+  name: string;
+  level: PermissionLevel;
+}
+
 // 按世界书缓存本页会话内已授权的最高权限，避免重复弹窗。
-const permissionCache = new Map<string, PermissionLevel>();
+const permissionCache = new Map<string, GrantedPermission>();
+const grantedPermissionState = shallowReactive<GrantedPermission[]>([]);
+
+export const grantedPermissions = readonly(grantedPermissionState);
 
 function requiredLevel(operation: 'read' | 'write' | 'delete'): PermissionLevel {
   switch (operation) {
@@ -24,15 +36,44 @@ function requiredLevel(operation: 'read' | 'write' | 'delete'): PermissionLevel 
   }
 }
 
-function operationText(operation: 'read' | 'write' | 'delete') {
-  switch (operation) {
-    case 'read':
+export function permissionLevelText(level: PermissionLevel) {
+  switch (level) {
+    case 1:
       return '读取';
-    case 'write':
+    case 2:
       return '写入';
-    case 'delete':
+    case 3:
       return '删除';
   }
+}
+
+function operationText(operation: 'read' | 'write' | 'delete') {
+  return permissionLevelText(requiredLevel(operation));
+}
+
+function upsertGrantedPermission(scope: PermissionScope, level: PermissionLevel) {
+  const next: GrantedPermission = {
+    cacheKey: scope.cacheKey,
+    displayPath: scope.displayPath,
+    kind: scope.kind,
+    name: scope.name,
+    level,
+  };
+  permissionCache.set(scope.cacheKey, next);
+
+  const existingIndex = grantedPermissionState.findIndex(permission => permission.cacheKey === scope.cacheKey);
+  if (existingIndex >= 0) {
+    grantedPermissionState.splice(existingIndex, 1, next);
+  } else {
+    grantedPermissionState.push(next);
+  }
+
+  grantedPermissionState.sort((left, right) => {
+    if (left.displayPath === right.displayPath) {
+      return left.level - right.level;
+    }
+    return left.displayPath.localeCompare(right.displayPath, 'zh-Hans-CN');
+  });
 }
 
 function downloadBackup(content: string, fileName: string, contentType: string) {
@@ -65,7 +106,7 @@ async function backupLorebook(worldbookName: string) {
 async function ensureScopePermission(scope: PermissionScope, operation: 'read' | 'write' | 'delete') {
   const level = requiredLevel(operation);
   // 高权限天然覆盖低权限，例如已允许 delete 时不必再次确认 read/write。
-  if ((permissionCache.get(scope.cacheKey) ?? 0) >= level) {
+  if ((permissionCache.get(scope.cacheKey)?.level ?? 0) >= level) {
     return;
   }
 
@@ -98,12 +139,12 @@ async function ensureScopePermission(scope: PermissionScope, operation: 'read' |
   );
 
   if (result === SillyTavern.POPUP_RESULT.CUSTOM1) {
-    permissionCache.set(scope.cacheKey, level);
+    upsertGrantedPermission(scope, level);
     return;
   }
   if (result === SillyTavern.POPUP_RESULT.CUSTOM2) {
     await backupLorebook(scope.name);
-    permissionCache.set(scope.cacheKey, level);
+    upsertGrantedPermission(scope, level);
     return;
   }
   if (result === true || result === SillyTavern.POPUP_RESULT.AFFIRMATIVE) {
@@ -168,4 +209,5 @@ export async function ensurePathPermission(
 export function resetPermissionCache() {
   // 工具注销时清空缓存，避免把本页状态泄漏到下一次注册周期。
   permissionCache.clear();
+  grantedPermissionState.splice(0, grantedPermissionState.length);
 }
