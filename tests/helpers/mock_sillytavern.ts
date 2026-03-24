@@ -1,3 +1,6 @@
+import _ from 'lodash';
+import type { PartialDeep } from 'type-fest';
+
 type PopupResult = boolean | string;
 
 interface MockEntry {
@@ -14,6 +17,7 @@ interface MockBook {
 
 interface MockOptions {
   books?: Record<string, MockBook | null>;
+  characters?: Record<string, PartialDeep<Character>>;
   popupResult?: PopupResult;
 }
 
@@ -92,9 +96,29 @@ function cloneWorldbook(entries: WorldbookEntry[]) {
   return structuredClone(entries);
 }
 
+function createDefaultCharacter(name: string): Character {
+  return {
+    avatar: `${name}.png`,
+    version: '1.0.0',
+    creator: 'test',
+    creator_notes: '',
+    worldbook: null,
+    description: '',
+    first_messages: [],
+    extensions: {
+      regex_scripts: [],
+      tavern_helper: {
+        scripts: [],
+        variables: {},
+      },
+    },
+  };
+}
+
 function buildState(options: MockOptions) {
   const rawBooks = new Map<string, MockBook | null>();
   const worldbooks = new Map<string, WorldbookEntry[]>();
+  const characters = new Map<string, Character>();
   let nextUid = 1;
 
   for (const [name, book] of Object.entries(options.books ?? {})) {
@@ -115,6 +139,11 @@ function buildState(options: MockOptions) {
       } satisfies WorldbookEntry;
     });
     worldbooks.set(name, entries);
+  }
+
+  for (const [name, partial] of Object.entries(options.characters ?? {})) {
+    const base = createDefaultCharacter(name);
+    characters.set(name, _.merge(structuredClone(base), structuredClone(partial)));
   }
 
   function ensureWorldbook(name: string) {
@@ -147,6 +176,7 @@ function buildState(options: MockOptions) {
   return {
     rawBooks,
     worldbooks,
+    characters,
     ensureWorldbook,
     syncRawFromWorldbook,
     allocateUid() {
@@ -214,6 +244,29 @@ export function installMockSillyTavern(options: MockOptions = {}) {
   (globalThis as any)._ = _;
 
   (globalThis as any).getWorldbookNames = () => [...state.rawBooks.keys()];
+  (globalThis as any).getCharacterNames = () => [...state.characters.keys()];
+  (globalThis as any).getCurrentCharacterName = () => {
+    const first = state.characters.keys().next();
+    return first.done ? null : first.value;
+  };
+  (globalThis as any).getCharacter = async (name: string) => {
+    const resolved = name === 'current' ? (globalThis as any).getCurrentCharacterName() : name;
+    const character = resolved ? state.characters.get(resolved) : undefined;
+    if (!character) {
+      throw new Error(`Character '${name}' not found.`);
+    }
+    return structuredClone(character);
+  };
+  (globalThis as any).updateCharacterWith = async (name: string, updater: (character: Character) => Character | Promise<Character>) => {
+    const resolved = name === 'current' ? (globalThis as any).getCurrentCharacterName() : name;
+    const current = resolved ? state.characters.get(resolved) : undefined;
+    if (!resolved || !current) {
+      throw new Error(`Character '${name}' not found.`);
+    }
+    const updated = await updater(structuredClone(current));
+    state.characters.set(resolved, structuredClone(updated));
+    return structuredClone(updated);
+  };
   (globalThis as any).getWorldbook = async (name: string) => {
     const worldbook = state.worldbooks.get(name);
     if (!worldbook) {
@@ -284,10 +337,10 @@ export function installMockSillyTavern(options: MockOptions = {}) {
     popupCalls,
     rawBooks: state.rawBooks,
     worldbooks: state.worldbooks,
+    characters: state.characters,
   };
 }
 
 export function buildBook(entries: MockEntry[]): MockBook {
   return { entries };
 }
-import _ from 'lodash';

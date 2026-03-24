@@ -9,7 +9,7 @@ import {
 } from '../src/wtc/node_fs/helpers';
 import { LorebookEntryNode } from '../src/wtc/node_fs/lorebook_entry_node';
 import { LorebookNode } from '../src/wtc/node_fs/lorebook_node';
-import { resolveDirectoryNode, resolveFileNode, resolveSearchScope } from '../src/wtc/node_fs/resolve';
+import { resolveDirectoryNode, resolveFileNode, resolveSearchScope, resolveWritableFileNode } from '../src/wtc/node_fs/resolve';
 import { RootNode } from '../src/wtc/node_fs/root_node';
 import { isAttributeNode, isDeletableNode, isDirectoryNode, isTextFileNode } from '../src/wtc/node_fs/types';
 import { directoryExistsInView, fileExistsInView, openLorebookView } from '../src/wtc/node_fs/view';
@@ -46,34 +46,34 @@ describe('node_fs helpers and view', () => {
     const view = await openLorebookView('设定集');
 
     expect(view.files.map(file => file.filePath)).toStrictEqual([
-      '/设定集/Folder/Nested/a',
-      '/设定集/Folder/Nested/b',
-      '/设定集/Folder/Top',
-      '/设定集/README',
-      '/设定集/z-last',
+      '/Worldbooks/设定集/Folder/Nested/a',
+      '/Worldbooks/设定集/Folder/Nested/b',
+      '/Worldbooks/设定集/Folder/Top',
+      '/Worldbooks/设定集/README',
+      '/Worldbooks/设定集/z-last',
     ]);
-    expect(directoryExistsInView(view, '/设定集')).toBe(true);
-    expect(directoryExistsInView(view, '/设定集/Folder')).toBe(true);
-    expect(directoryExistsInView(view, '/设定集/missing')).toBe(false);
-    expect(fileExistsInView(view, '/设定集/README')).toBe(true);
-    expect(fileExistsInView(view, '/设定集/missing')).toBe(false);
+    expect(directoryExistsInView(view, '/Worldbooks/设定集')).toBe(true);
+    expect(directoryExistsInView(view, '/Worldbooks/设定集/Folder')).toBe(true);
+    expect(directoryExistsInView(view, '/Worldbooks/设定集/missing')).toBe(false);
+    expect(fileExistsInView(view, '/Worldbooks/设定集/README')).toBe(true);
+    expect(fileExistsInView(view, '/Worldbooks/设定集/missing')).toBe(false);
 
     expect(basenameFromPath('/')).toBe('/');
-    expect(basenameFromPath('/设定集/Folder/Nested')).toBe('Nested');
-    expect(normalizeChildPath('/设定集/Folder/', 'Top')).toBe('/设定集/Folder/Top');
+    expect(basenameFromPath('/Worldbooks/设定集/Folder/Nested')).toBe('Nested');
+    expect(normalizeChildPath('/Worldbooks/设定集/Folder/', 'Top')).toBe('/Worldbooks/设定集/Folder/Top');
     expect(comparePath('a', 'b')).toBeLessThan(0);
     expect(comparePath('b', 'a')).toBeGreaterThan(0);
     expect(comparePath('a', 'a')).toBe(0);
 
-    expect(findDirectoryFileSpan(view, '/设定集')).toStrictEqual({ fileStart: 0, fileEnd: 5 });
-    expect(findDirectoryFileSpan(view, '/设定集/Folder')).toStrictEqual({ fileStart: 0, fileEnd: 3 });
-    expect(findDirectoryFileSpan(view, '/设定集/Folder/Nested')).toStrictEqual({ fileStart: 0, fileEnd: 2 });
+    expect(findDirectoryFileSpan(view, '/Worldbooks/设定集')).toStrictEqual({ fileStart: 0, fileEnd: 5 });
+    expect(findDirectoryFileSpan(view, '/Worldbooks/设定集/Folder')).toStrictEqual({ fileStart: 0, fileEnd: 3 });
+    expect(findDirectoryFileSpan(view, '/Worldbooks/设定集/Folder/Nested')).toStrictEqual({ fileStart: 0, fileEnd: 2 });
 
-    expect(listImmediateChildren(view, '/设定集', 0, 5)).toStrictEqual([
+    expect(listImmediateChildren(view, '/Worldbooks/设定集', 0, 5)).toStrictEqual([
       {
         kind: 'directory',
         name: 'Folder',
-        path: '/设定集/Folder',
+        path: '/Worldbooks/设定集/Folder',
         fileStart: 0,
         fileEnd: 3,
       },
@@ -89,11 +89,11 @@ describe('node_fs helpers and view', () => {
       },
     ]);
 
-    expect(listImmediateChildren(view, '/设定集/Folder', 0, 3)).toStrictEqual([
+    expect(listImmediateChildren(view, '/Worldbooks/设定集/Folder', 0, 3)).toStrictEqual([
       {
         kind: 'directory',
         name: 'Nested',
-        path: '/设定集/Folder/Nested',
+        path: '/Worldbooks/设定集/Folder/Nested',
         fileStart: 0,
         fileEnd: 2,
       },
@@ -118,7 +118,7 @@ describe('node_fs helpers and view', () => {
     const view = await openLorebookView('设定集');
 
     try {
-      entryForFilePath(view, '/设定集/Folder/File');
+      entryForFilePath(view, '/Worldbooks/设定集/Folder/File');
       throw new Error('expected conflict');
     } catch (error) {
       expect(error).toMatchObject({
@@ -148,19 +148,19 @@ describe('node_fs node guards and root/lorebook nodes', () => {
     });
     expect(await root.getChild('')).toBeNull();
     expect(await root.getChild('非法/名称')).toBeNull();
-    expect(await root.getChild('设定集')).toBeInstanceOf(LorebookNode);
-    expect(await collectPaths(root.list())).toStrictEqual(['/角色集', '/设定集']);
+    expect(await root.getChild('Worldbooks')).not.toBeNull();
+    expect(await collectPaths(root.list())).toStrictEqual(['/Characters', '/Worldbooks']);
 
     const lorebook = new LorebookNode('设定集');
     expect(await lorebook.stat()).toStrictEqual({
-      path: '/设定集',
+      path: '/Worldbooks/设定集',
       name: '设定集',
       kind: 'directory',
       readable: true,
       writable: true,
     });
-    expect((await lorebook.openView()).lorebookName).toBe('设定集');
-    expect(await collectPaths(lorebook.list())).toStrictEqual(['/设定集/README']);
+    expect((await lorebook.openView()).worldbookName).toBe('设定集');
+    expect(await collectPaths(lorebook.list())).toStrictEqual(['/Worldbooks/设定集/README']);
     expect(await lorebook.getChild('README')).toBeInstanceOf(LorebookEntryNode);
     expect(await lorebook.getChild('missing')).toBeNull();
   });
@@ -173,7 +173,7 @@ describe('node_fs node guards and root/lorebook nodes', () => {
     });
 
     const root = new RootNode();
-    const file = await resolveFileNode('/设定集/正文');
+    const file = await resolveFileNode('/Worldbooks/设定集/正文');
     expect(file).not.toBeNull();
     expect(isDirectoryNode(root)).toBe(true);
     expect(isTextFileNode(root)).toBe(false);
@@ -201,16 +201,16 @@ describe('node_fs virtual directories and entry nodes', () => {
     const folder = await lorebook.getChild('Folder');
     expect(folder).toBeInstanceOf(VirtualDirectoryNode);
     expect(await folder!.stat()).toStrictEqual({
-      path: '/设定集/Folder',
+      path: '/Worldbooks/设定集/Folder',
       name: 'Folder',
       kind: 'directory',
       readable: true,
       writable: true,
     });
     expect(await collectPaths((folder as VirtualDirectoryNode).list())).toStrictEqual([
-      '/设定集/Folder/Content',
-      '/设定集/Folder/Nested',
-      '/设定集/Folder/Z-last',
+      '/Worldbooks/设定集/Folder/Content',
+      '/Worldbooks/设定集/Folder/Nested',
+      '/Worldbooks/设定集/Folder/Z-last',
     ]);
     expect(await (folder as VirtualDirectoryNode).getChild('Content')).toBeInstanceOf(LorebookEntryNode);
     expect(await (folder as VirtualDirectoryNode).getChild('Nested')).toBeInstanceOf(VirtualDirectoryNode);
@@ -225,7 +225,7 @@ describe('node_fs virtual directories and entry nodes', () => {
     });
 
     const view = await openLorebookView('设定集');
-    const folder = new VirtualDirectoryNode(view, '/设定集/Folder', 0, 0);
+    const folder = new VirtualDirectoryNode(view, '/Worldbooks/设定集/Folder', 0, 0);
     const nested = await folder.getChild('Nested');
 
     expect(nested).toBeInstanceOf(VirtualDirectoryNode);
@@ -250,10 +250,10 @@ describe('node_fs virtual directories and entry nodes', () => {
       },
     });
 
-    const file = (await resolveFileNode('/设定集/正文'))!;
+    const file = (await resolveFileNode('/Worldbooks/设定集/正文'))!;
 
     expect(await file.stat()).toStrictEqual({
-      path: '/设定集/正文',
+      path: '/Worldbooks/设定集/正文',
       name: '正文',
       kind: 'file',
       readable: true,
@@ -281,6 +281,12 @@ describe('node_fs virtual directories and entry nodes', () => {
       replaceAll: true,
     });
     expect(mock.worldbooks.get('设定集')?.[0]?.content).toBe('A\nC\nC');
+
+    expect(isAttributeNode(file)).toBe(true);
+    expect(isDeletableNode(file)).toBe(true);
+    if (!isAttributeNode(file) || !isDeletableNode(file)) {
+      throw new Error('expected attribute + deletable file node');
+    }
 
     expect(await file.getattr()).toMatchObject({
       uid: 1,
@@ -311,7 +317,7 @@ describe('node_fs virtual directories and entry nodes', () => {
 });
 
 describe('node_fs resolve and walk', () => {
-  test('resolves directories, files and search scopes including file/directory name collisions', async () => {
+  test('resolves directories, files and search scopes with directory-first name occupancy', async () => {
     installMockSillyTavern({
       books: {
         设定集: buildBook([
@@ -324,23 +330,24 @@ describe('node_fs resolve and walk', () => {
 
     expect(await resolveDirectoryNode('relative')).toBeNull();
     expect(await resolveDirectoryNode('/')).toBeInstanceOf(RootNode);
-    expect(await resolveDirectoryNode('/设定集')).toBeInstanceOf(LorebookNode);
-    const dir = await resolveDirectoryNode('/设定集/Folder');
+    expect(await resolveDirectoryNode('/Worldbooks/设定集')).toBeInstanceOf(LorebookNode);
+    const dir = await resolveDirectoryNode('/Worldbooks/设定集/Folder');
     expect(dir).toBeInstanceOf(VirtualDirectoryNode);
-    expect(await resolveDirectoryNode('/设定集/missing')).toBeNull();
+    expect(await resolveDirectoryNode('/Worldbooks/设定集/missing')).toBeNull();
 
     expect(await resolveFileNode('/')).toBeNull();
-    expect(await resolveFileNode('/设定集')).toBeNull();
-    expect(await resolveFileNode('/设定集/Folder')).toBeInstanceOf(LorebookEntryNode);
-    expect(await resolveFileNode('/设定集/missing')).toBeNull();
-
-    const search = await resolveSearchScope('/设定集/Folder');
-    expect(search.fileNode).toBeInstanceOf(LorebookEntryNode);
-    expect(search.directoryNode).toBeInstanceOf(VirtualDirectoryNode);
-    expect(await resolveSearchScope('/')).toStrictEqual({
-      fileNode: null,
-      directoryNode: null,
+    expect(await resolveFileNode('/Worldbooks/设定集')).toBeNull();
+    const conflictedFile = await resolveFileNode('/Worldbooks/设定集/Folder');
+    expect(conflictedFile).not.toBeNull();
+    await expect(conflictedFile!.read()).rejects.toMatchObject({
+      errorType: 'PATH_CONFLICT',
     });
+    expect(await resolveFileNode('/Worldbooks/设定集/missing')).toBeNull();
+
+    const search = await resolveSearchScope('/Worldbooks/设定集/Folder');
+    expect(search.fileNode).not.toBeNull();
+    expect(search.directoryNode).toBeInstanceOf(VirtualDirectoryNode);
+    expect((await resolveSearchScope('/')).directoryNode).toBeInstanceOf(RootNode);
   });
 
   test('walks directories in DFS order', async () => {
@@ -354,19 +361,19 @@ describe('node_fs resolve and walk', () => {
       },
     });
 
-    const root = (await resolveDirectoryNode('/设定集')) as LorebookNode;
+    const root = (await resolveDirectoryNode('/Worldbooks/设定集')) as LorebookNode;
     const walked = await collectPaths(walkDirectory(root));
 
     expect(walked).toStrictEqual([
-      '/设定集/Folder',
-      '/设定集/Folder/Content',
-      '/设定集/Folder/Sub',
-      '/设定集/Folder/Sub/Leaf',
-      '/设定集/README',
+      '/Worldbooks/设定集/Folder',
+      '/Worldbooks/设定集/Folder/Content',
+      '/Worldbooks/设定集/Folder/Sub',
+      '/Worldbooks/设定集/Folder/Sub/Leaf',
+      '/Worldbooks/设定集/README',
     ]);
   });
 
-  test('propagates path conflicts during file resolution', async () => {
+  test('returns conflict nodes for duplicated exact paths', async () => {
     installMockSillyTavern({
       books: {
         设定集: buildBook([
@@ -376,7 +383,39 @@ describe('node_fs resolve and walk', () => {
       },
     });
 
-    await expect(resolveFileNode('/设定集/A')).rejects.toMatchObject({
+    const conflicted = await resolveFileNode('/Worldbooks/设定集/A');
+    expect(conflicted).not.toBeNull();
+    await expect(conflicted!.read()).rejects.toMatchObject({
+      errorType: 'PATH_CONFLICT',
+    });
+  });
+
+  test('treats shadowed same-name files as conflicts while keeping directory traversal visible', async () => {
+    installMockSillyTavern({
+      books: {
+        设定集: buildBook([
+          { uid: 1, comment: 'Folder', content: 'shadowed file' },
+          { uid: 2, comment: 'Folder/Leaf', content: 'leaf' },
+        ]),
+      },
+    });
+
+    const view = await openLorebookView('设定集');
+    expect(view.files.map(file => file.filePath)).toStrictEqual(['/Worldbooks/设定集/Folder/Leaf']);
+    expect(view.conflicts.has('/Worldbooks/设定集/Folder')).toBe(true);
+
+    const directory = await resolveDirectoryNode('/Worldbooks/设定集/Folder');
+    expect(directory).toBeInstanceOf(VirtualDirectoryNode);
+
+    const fileNode = await resolveFileNode('/Worldbooks/设定集/Folder');
+    expect(fileNode).not.toBeNull();
+    await expect(fileNode!.write('x')).rejects.toMatchObject({
+      errorType: 'PATH_CONFLICT',
+    });
+
+    const writableNode = await resolveWritableFileNode('/Worldbooks/设定集/Folder');
+    expect(writableNode).not.toBeNull();
+    await expect(writableNode!.write('x')).rejects.toMatchObject({
       errorType: 'PATH_CONFLICT',
     });
   });

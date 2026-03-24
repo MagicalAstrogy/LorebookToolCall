@@ -41,7 +41,7 @@ describe('setAttributeAction', () => {
     });
 
     const result = await setAttributeAction({
-      file_path: '/设定集/正文',
+      file_path: '/Worldbooks/设定集/正文',
       attributes: {
         enabled: false,
         strategy: {
@@ -63,7 +63,7 @@ describe('setAttributeAction', () => {
     expect(result.backup).toMatchObject({
       rollbackMethod: 'setAttributeRollback',
       worldbookName: '设定集',
-      filePath: '/设定集/正文',
+      filePath: '/Worldbooks/设定集/正文',
       uid: 1,
     });
     expect(result.backup.rollbackPatch).toStrictEqual({
@@ -102,7 +102,7 @@ describe('setAttributeAction', () => {
     });
 
     const result = await setAttributeAction({
-      file_path: '/设定集/正文',
+      file_path: '/Worldbooks/设定集/正文',
       attributes: {
         enabled: false,
         position: {
@@ -141,7 +141,7 @@ describe('setAttributeAction', () => {
     });
 
     const result = await setAttributeAction({
-      file_path: '/设定集/正文',
+      file_path: '/Worldbooks/设定集/正文',
       attributes: {
         enabled: false,
         position: {
@@ -205,7 +205,7 @@ describe('setAttributeAction', () => {
     });
 
     const result = await setAttributeAction({
-      file_path: '/设定集/正文',
+      file_path: '/Worldbooks/设定集/正文',
       attributes: {
         strategy: {
           scan_depth: WORLDBOOK_ENTRY_PATCH_SCAN_DEPTH_SAME_AS_GLOBAL,
@@ -255,11 +255,57 @@ describe('setAttributeAction', () => {
 
     const error = await expectToolError(
       setAttributeAction({
-        file_path: '/设定集/正文',
+        file_path: '/Worldbooks/设定集/正文',
         attributes: { enabled: false },
       }),
     );
 
     expect(error.errorType).toBe('ENTRY_NOT_FOUND');
+  });
+
+  test('patches worldbook attributes through character WorldBook alias and rolls back with logical path', async () => {
+    const mock = installMockSillyTavern({
+      books: {
+        设定集: buildBook([
+          {
+            uid: 1,
+            comment: '正文',
+            content: '内容',
+            attributes: {
+              enabled: true,
+              probability: 42,
+            },
+          },
+        ]),
+      },
+      characters: {
+        Alice: {
+          worldbook: '设定集',
+        },
+      },
+    });
+
+    const result = await setAttributeAction({
+      file_path: '/Characters/Alice/WorldBook/正文',
+      attributes: {
+        enabled: false,
+      },
+    });
+
+    expect(result.filePath).toBe('/Characters/Alice/WorldBook/正文');
+    expect(result.attributes.enabled).toBe(false);
+    expect(result.backup).toMatchObject({
+      rollbackMethod: 'setAttributeRollback',
+      worldbookName: '设定集',
+      filePath: '/Characters/Alice/WorldBook/正文',
+      uid: 1,
+      rollbackPatch: {
+        enabled: true,
+      },
+    });
+    expect(mock.worldbooks.get('设定集')?.[0]?.enabled).toBe(false);
+
+    await setAttributeRollback(result.backup);
+    expect(mock.worldbooks.get('设定集')?.[0]?.enabled).toBe(true);
   });
 });

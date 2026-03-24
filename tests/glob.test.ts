@@ -20,7 +20,7 @@ describe('globAction', () => {
     const result = await globAction({ pattern: '*' });
 
     expect(result).toStrictEqual({
-      filenames: ['/角色集/', '/设定集/'],
+      filenames: ['/Characters/', '/Worldbooks/'],
       durationMs: 0,
       numFiles: 2,
       truncated: false,
@@ -37,12 +37,79 @@ describe('globAction', () => {
       },
     });
 
-    const result = await globAction({ path: '/设定集', pattern: '*' });
+    const result = await globAction({ path: '/Worldbooks/设定集', pattern: '*' });
 
     expect(result).toStrictEqual({
-      filenames: ['/设定集/Folder', '/设定集/Folder/'],
+      filenames: ['/Worldbooks/设定集/Folder/'],
       durationMs: 0,
-      numFiles: 2,
+      numFiles: 1,
+      truncated: false,
+    });
+  });
+
+  test('supports recursive glob from root through the unified directory walk', async () => {
+    installMockSillyTavern({
+      books: {
+        设定集: buildBook([{ uid: 1, comment: 'Folder/Entry', content: '正文' }]),
+      },
+      characters: {
+        Alice: {
+          description: 'desc',
+        },
+      },
+    });
+
+    const result = await globAction({ path: '/', pattern: '**/*' });
+
+    expect(result).toStrictEqual({
+      filenames: [
+        '/Characters/',
+        '/Characters/Alice/',
+        '/Characters/Alice/Description.md',
+        '/Characters/Alice/FirstMessages/',
+        '/Characters/Alice/Regex/',
+        '/Characters/Alice/Scripts/',
+        '/Worldbooks/',
+        '/Worldbooks/设定集/',
+        '/Worldbooks/设定集/Folder/',
+        '/Worldbooks/设定集/Folder/Entry',
+      ],
+      durationMs: 0,
+      numFiles: 10,
+      truncated: false,
+    });
+  });
+
+  test('follows character WorldBook symlink recursively while keeping logical paths', async () => {
+    installMockSillyTavern({
+      books: {
+        设定集: buildBook([
+          { uid: 1, comment: 'README', content: 'readme' },
+          { uid: 2, comment: 'Folder/Entry', content: '正文' },
+        ]),
+      },
+      characters: {
+        Alice: {
+          worldbook: '设定集',
+        },
+      },
+    });
+
+    const result = await globAction({ path: '/Characters/Alice', pattern: '**/*' });
+
+    expect(result).toStrictEqual({
+      filenames: [
+        '/Characters/Alice/Description.md',
+        '/Characters/Alice/FirstMessages/',
+        '/Characters/Alice/Regex/',
+        '/Characters/Alice/Scripts/',
+        '/Characters/Alice/WorldBook/',
+        '/Characters/Alice/WorldBook/Folder/',
+        '/Characters/Alice/WorldBook/Folder/Entry',
+        '/Characters/Alice/WorldBook/README',
+      ],
+      durationMs: 0,
+      numFiles: 8,
       truncated: false,
     });
   });
@@ -57,12 +124,12 @@ describe('globAction', () => {
       },
     });
 
-    const result = await globAction({ path: '/-SnowYuki', pattern: '**/*' });
+    const result = await globAction({ path: '/Worldbooks/-SnowYuki', pattern: '**/*' });
 
     expect(result).toStrictEqual({
-      filenames: ['/-SnowYuki/Folder', '/-SnowYuki/Folder/', '/-SnowYuki/Folder/Nested', '/-SnowYuki/README'],
+      filenames: ['/Worldbooks/-SnowYuki/Folder/', '/Worldbooks/-SnowYuki/Folder/Nested', '/Worldbooks/-SnowYuki/README'],
       durationMs: 0,
-      numFiles: 4,
+      numFiles: 3,
       truncated: false,
     });
   });
