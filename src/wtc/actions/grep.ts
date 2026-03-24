@@ -3,7 +3,10 @@ import { ensureLorebookPermission } from '@/wtc/permission';
 import { ToolError, invalidPathDetail } from '@/wtc/result';
 import { grepArgsSchema } from '@/wtc/schema';
 import { globToRegExp, inferTypeMatches, parseVirtualPath, relativeFromBase } from '@/wtc/store';
-import { compilePattern, getIndexForWorldbook } from '@/wtc/actions/shared';
+import { compilePattern } from '@/wtc/actions/shared';
+import { resolveSearchScope } from '@/wtc/node_fs/nodes';
+import { isTextFileNode } from '@/wtc/node_fs/types';
+import { walkDirectory } from '@/wtc/node_fs/walk';
 
 export async function grepAction(args: z.infer<typeof grepArgsSchema>) {
   const { normalized, worldbookName } = parseVirtualPath(args.path);
@@ -13,17 +16,32 @@ export async function grepAction(args: z.infer<typeof grepArgsSchema>) {
     ]);
   }
   await ensureLorebookPermission(worldbookName, 'read');
-  const { index } = await getIndexForWorldbook(worldbookName);
   const outputMode = args.output_mode ?? 'files_with_matches';
   const regex = compilePattern(args.pattern, args['-i'] ?? false, args.multiline ?? false);
   const globMatcher = args.glob ? globToRegExp(args.glob) : null;
   const basePath = normalized;
-  const basePrefix = `${basePath.replace(/\/+$/, '')}/`;
-  const matchedFiles = index.files.filter(file => {
-    // Grep 按目录视角工作，因此允许 path 指向某个目录或单一条目所在前缀。
-    if (!file.filePath.startsWith(basePrefix) && file.filePath !== basePath) {
-      return false;
+  const { fileNode, directoryNode } = await resolveSearchScope(basePath);
+  const candidates = new Map<string, { filePath: string; content: string }>();
+
+  if (fileNode) {
+    candidates.set(fileNode.path, {
+      filePath: fileNode.path,
+      content: await fileNode.read(),
+    });
+  }
+  if (directoryNode) {
+    for await (const node of walkDirectory(directoryNode)) {
+      if (!isTextFileNode(node)) {
+        continue;
+      }
+      candidates.set(node.path, {
+        filePath: node.path,
+        content: await node.read(),
+      });
     }
+  }
+
+  const matchedFiles = [...candidates.values()].filter(file => {
     const relative = relativeFromBase(basePath, file.filePath);
     if (globMatcher && !globMatcher.test(relative)) {
       return false;
@@ -31,7 +49,7 @@ export async function grepAction(args: z.infer<typeof grepArgsSchema>) {
     if (!inferTypeMatches(file.filePath, args.type)) {
       return false;
     }
-    return regex.test(file.raw.content);
+    return regex.test(file.content);
   });
 
   const offset = args.offset ?? 0;
@@ -50,7 +68,7 @@ export async function grepAction(args: z.infer<typeof grepArgsSchema>) {
 
   if (outputMode === 'count') {
     const counts = matchedFiles.map(file => {
-      const matches = file.raw.content.match(regex);
+      const matches = file.content.match(regex);
       return `${file.filePath}:${matches?.length ?? 0}`;
     });
     return {
@@ -65,7 +83,7 @@ export async function grepAction(args: z.infer<typeof grepArgsSchema>) {
   const after = args.context ?? args['-C'] ?? args['-A'] ?? 0;
   const blocks: string[] = [];
   for (const file of slice(matchedFiles)) {
-    const lines = file.raw.content.split('\n');
+    const lines = file.content.split('\n');
     for (let index = 0; index < lines.length; index += 1) {
       if (!regex.test(lines[index])) {
         continue;

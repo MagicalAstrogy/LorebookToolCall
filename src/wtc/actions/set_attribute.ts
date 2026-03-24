@@ -2,8 +2,8 @@ import type { z } from 'zod';
 import { ensureLorebookPermission } from '@/wtc/permission';
 import { ToolError } from '@/wtc/result';
 import { decodeWorldbookEntryPatchSpecialValues, encodeWorldbookEntryPatchSpecialValues, setAttributeArgsSchema } from '@/wtc/schema';
-import { applyWorldbookPatch, ensureNoConflict, requireFileTarget, withWorldbookQueue } from '@/wtc/store';
-import { getIndexForWorldbook } from '@/wtc/actions/shared';
+import { requireFileTarget, withWorldbookQueue } from '@/wtc/store';
+import { resolveFileNode } from '@/wtc/node_fs/nodes';
 
 type ReturnedAttributes = Record<string, unknown> & { comment?: never; content?: never };
 type DeleteMarker = { __delete: true };
@@ -135,27 +135,13 @@ export async function setAttributeAction(args: z.infer<typeof setAttributeArgsSc
   await ensureLorebookPermission(worldbookName, 'write');
 
   return withWorldbookQueue(worldbookName, async () => {
-    const { index } = await getIndexForWorldbook(worldbookName);
-    ensureNoConflict(index, normalized);
-    const existing = index.exactFiles.get(normalized);
-    if (!existing) {
+    const node = await resolveFileNode(normalized);
+    if (!node) {
       throw new ToolError('ENTRY_NOT_FOUND', `条目 '${normalized}' 不存在。`);
     }
 
-    let updatedEntry: WorldbookEntry | undefined;
-    let previousEntry: WorldbookEntry | undefined;
-    // 直接在高层条目对象上应用 patch，保持字段语义与 WorldbookEntry 一致。
-    await updateWorldbookWith(worldbookName, worldbook =>
-      worldbook.map(entry => {
-        if (entry.uid !== existing.uid) {
-          return entry;
-        }
-        previousEntry = structuredClone(entry);
-        updatedEntry = applyWorldbookPatch(entry, normalizedAttributes);
-        return updatedEntry;
-      }),
-    );
-
+    const previousEntry = (await node.getattr()) as WorldbookEntry;
+    const updatedEntry = (await node.setattr(normalizedAttributes)) as WorldbookEntry;
     if (!updatedEntry || !previousEntry) {
       throw new ToolError('tool_use_error', '更新条目属性失败。');
     }
@@ -167,7 +153,7 @@ export async function setAttributeAction(args: z.infer<typeof setAttributeArgsSc
         rollbackMethod: 'setAttributeRollback' as const,
         worldbookName,
         filePath: normalized,
-        uid: existing.uid,
+        uid: node.uid,
         rollbackPatch: buildRollbackPatchFromPrevious(normalizedAttributes, previousEntry),
       },
     };

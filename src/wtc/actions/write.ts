@@ -5,14 +5,13 @@ import { writeArgsSchema } from '@/wtc/schema';
 import {
   basenameFromEntryPath,
   createStructuredPatch,
-  ensureNoConflict,
   findRawBookEntry,
   loadRawWorldbook,
   requireFileTarget,
   saveRawWorldbook,
   withWorldbookQueue,
 } from '@/wtc/store';
-import { getIndexForWorldbook, readEntryContent } from '@/wtc/actions/shared';
+import { resolveFileNode } from '@/wtc/node_fs/nodes';
 
 export type WriteBackup =
   | {
@@ -84,15 +83,11 @@ export async function writeAction(args: z.infer<typeof writeArgsSchema>) {
   await ensureLorebookPermission(worldbookName, 'write');
 
   return withWorldbookQueue(worldbookName, async () => {
-    const { index } = await getIndexForWorldbook(worldbookName);
-    ensureNoConflict(index, normalized);
-    const existing = index.exactFiles.get(normalized);
-    if (existing) {
+    const node = await resolveFileNode(normalized);
+    if (node) {
       // 路径已存在时按覆盖写入处理，并返回结构化 patch 方便模型理解变更。
-      const original = await readEntryContent(normalized);
-      await updateWorldbookWith(worldbookName, worldbook =>
-        worldbook.map(entry => (entry.uid === existing.uid ? { ...entry, content: args.content } : entry)),
-      );
+      const original = await node.read();
+      await node.write(args.content);
       return {
         type: 'update' as const,
         filePath: normalized,
@@ -105,7 +100,7 @@ export async function writeAction(args: z.infer<typeof writeArgsSchema>) {
           mode: 'update' as const,
           worldbookName,
           filePath: normalized,
-          uid: existing.uid,
+          uid: node.uid,
           originalContent: original,
         },
       };

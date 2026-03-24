@@ -2,14 +2,10 @@ import type { z } from 'zod';
 import { ensureLorebookPermission } from '@/wtc/permission';
 import { ToolError, invalidPathDetail } from '@/wtc/result';
 import { globArgsSchema } from '@/wtc/schema';
-import {
-  globToRegExp,
-  listCandidatesUnder,
-  normalizeVirtualPath,
-  parseVirtualPath,
-  relativeFromBase,
-} from '@/wtc/store';
-import { getIndexForWorldbook } from '@/wtc/actions/shared';
+import { globToRegExp, normalizeVirtualPath, parseVirtualPath, relativeFromBase } from '@/wtc/store';
+import { resolveDirectoryNode } from '@/wtc/node_fs/nodes';
+import { isDirectoryNode } from '@/wtc/node_fs/types';
+import { walkDirectory } from '@/wtc/node_fs/walk';
 
 function resolveGlobInputs(args: z.infer<typeof globArgsSchema>) {
   if (args.path) {
@@ -48,18 +44,26 @@ export async function globAction(args: z.infer<typeof globArgsSchema>) {
     ]);
   }
 
-  let filenames: string[];
+  let filenames: string[] = [];
   if (basePath === '/') {
-    // 根目录下只列世界书目录，不需要先读取具体某一本世界书。
-    filenames = listCandidatesUnder({ files: [], directories: [], exactFiles: new Map(), conflicts: new Set() }, '/');
+    const root = await resolveDirectoryNode('/');
+    if (root) {
+      for await (const child of root.list()) {
+        filenames.push(isDirectoryNode(child) ? `${child.path}/` : child.path);
+      }
+    }
   } else {
     const { worldbookName } = parseVirtualPath(basePath);
     if (!worldbookName) {
       filenames = [];
     } else {
       await ensureLorebookPermission(worldbookName, 'read');
-      const { index } = await getIndexForWorldbook(worldbookName);
-      filenames = listCandidatesUnder(index, basePath);
+      const directoryNode = await resolveDirectoryNode(basePath);
+      if (directoryNode) {
+        for await (const child of walkDirectory(directoryNode)) {
+          filenames.push(isDirectoryNode(child) ? `${child.path}/` : child.path);
+        }
+      }
     }
   }
 

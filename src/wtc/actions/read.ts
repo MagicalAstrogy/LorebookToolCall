@@ -3,12 +3,16 @@ import { ensureLorebookPermission } from '@/wtc/permission';
 import { ToolError } from '@/wtc/result';
 import { readArgsSchema } from '@/wtc/schema';
 import { requireFileTarget, toCatNumberedText } from '@/wtc/store';
-import { readEntryContent } from '@/wtc/actions/shared';
+import { resolveFileNode } from '@/wtc/node_fs/nodes';
 
 export async function readAction(args: z.infer<typeof readArgsSchema>) {
   const { normalized, worldbookName } = requireFileTarget(args.file_path);
   await ensureLorebookPermission(worldbookName, 'read');
-  const content = await readEntryContent(normalized);
+  const node = await resolveFileNode(normalized);
+  if (!node) {
+    throw new ToolError('ENTRY_NOT_FOUND', `条目 '${normalized}' 不存在。`);
+  }
+  const content = await node.read();
 
   const offset = args.offset ?? 0;
   const limit = args.limit ?? 0;
