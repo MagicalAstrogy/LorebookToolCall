@@ -73,60 +73,78 @@ const tavernRegexTrimStringsSchema = z.preprocess(value => {
   return value;
 }, z.array(z.string()));
 
+export const REGEX_YFM_SCHEMA_PATH = '/Schemas/Regex.json';
+export const SCRIPT_YFM_SCHEMA_PATH = '/Schemas/Script.json';
+
 export const tavernRegexSchema = z
   .object({
-    id: z.string(),
-    script_name: z.string(),
-    enabled: z.boolean(),
-    scope: z.enum(['global', 'character']).optional(),
-    find_regex: z.string(),
-    replace_string: z.string(),
-    trim_strings: tavernRegexTrimStringsSchema,
-    source: z.object({
-      user_input: z.boolean(),
-      ai_output: z.boolean(),
-      slash_command: z.boolean(),
-      world_info: z.boolean(),
-    }),
-    destination: z.object({
-      display: z.boolean(),
-      prompt: z.boolean(),
-    }),
-    run_on_edit: z.boolean(),
-    min_depth: z.number().int().nullable(),
-    max_depth: z.number().int().nullable(),
+    id: z.string().describe('酒馆正则的唯一 ID。'),
+    script_name: z.string().describe('正则名称；在角色卡扩展数据里作为唯一名称使用。'),
+    enabled: z.boolean().describe('是否启用该正则。'),
+    scope: z
+      .enum(['global', 'character'])
+      .optional()
+      .describe("旧版作用域字段。有效值：'global' 表示全局正则，'character' 表示角色卡局部正则。新 API 中该字段已不再必需，因此保持可选。"),
+    find_regex: z.string().describe('查找用的正则表达式文本。'),
+    replace_string: z.string().describe('替换后的文本。'),
+    trim_strings: tavernRegexTrimStringsSchema.describe("预处理要裁掉的字符串列表。兼容 string[]、单个 string，以及空字符串 ''（会自动转成空数组）。"),
+    source: z
+      .object({
+        user_input: z.boolean().describe('是否对用户输入生效。'),
+        ai_output: z.boolean().describe('是否对 AI 输出生效。'),
+        slash_command: z.boolean().describe('是否对 slash command 生效。'),
+        world_info: z.boolean().describe('是否对世界书 / world info 生效。'),
+      })
+      .describe("正则作用的文本来源。当前支持的来源键为：user_input、ai_output、slash_command、world_info。"),
+    destination: z
+      .object({
+        display: z.boolean().describe('是否在显示文本时生效。'),
+        prompt: z.boolean().describe('是否在作为提示词时生效。'),
+      })
+      .describe("正则作用的目标。有效目标键为：display（显示文本）和 prompt（提示词）。"),
+    run_on_edit: z.boolean().describe('是否在编辑消息时也执行该正则。'),
+    min_depth: z.number().int().nullable().describe('最小深度；null 表示不限制。'),
+    max_depth: z.number().int().nullable().describe('最大深度；null 表示不限制。'),
   })
+  .describe('酒馆正则对象：描述一条可应用于用户输入、AI 输出、slash command 或 world info 的替换规则。')
   .strict();
 
 export const tavernRegexFrontMatterSchema = tavernRegexSchema.omit({
   script_name: true,
   replace_string: true,
+}).extend({
+  $schema: z.literal(REGEX_YFM_SCHEMA_PATH).optional(),
 });
 
 export const scriptSchema = z
   .object({
-    type: z.literal('script'),
-    enabled: z.boolean(),
-    name: z.string(),
-    id: z.string(),
-    content: z.string(),
-    info: z.string(),
-    button: z.object({
-      enabled: z.boolean(),
-      buttons: z.array(
-        z.object({
-          name: z.string(),
-          visible: z.boolean(),
-        }),
-      ),
-    }),
-    data: z.record(z.string(), z.any()),
+    type: z.literal('script').describe("节点类型；对脚本节点固定为 'script'。"),
+    enabled: z.boolean().describe('是否启用该脚本。'),
+    name: z.string().describe('脚本名称。'),
+    id: z.string().describe('脚本唯一 ID。'),
+    content: z.string().describe('脚本源码内容。'),
+    info: z.string().describe('脚本说明 / 简介文本。'),
+    button: z
+      .object({
+        enabled: z.boolean().describe('是否启用脚本按钮功能。'),
+        buttons: z.array(
+          z.object({
+            name: z.string().describe('按钮显示名称。'),
+            visible: z.boolean().describe('按钮是否可见。'),
+          }),
+        ),
+      })
+      .describe('脚本按钮配置，包括是否启用按钮，以及按钮列表。'),
+    data: z.record(z.string(), z.any()).describe('脚本绑定的额外数据；键必须是字符串，值可以是任意类型。'),
   })
+  .describe('酒馆助手脚本对象：表示一个 type 为 script 的脚本节点，不包含 folder 节点。')
   .strict();
 
 export const scriptFrontMatterSchema = scriptSchema.omit({
   name: true,
   content: true,
+}).extend({
+  $schema: z.literal(SCRIPT_YFM_SCHEMA_PATH).optional(),
 });
 
 function buildSchemaMessage(error: z.ZodError) {
@@ -177,6 +195,18 @@ function parseYamlFrontMatter<T>(text: string, schema: z.ZodType<T>): ParsedFron
 function stringifyFrontMatter(frontMatter: Record<string, unknown>, body: string) {
   const yamlBlock = YAML.stringify(frontMatter).trimEnd();
   return `---\n${yamlBlock}\n---\n${body}`;
+}
+
+function withSchemaReference(frontMatter: Record<string, unknown>, schemaPath: string) {
+  return {
+    $schema: schemaPath,
+    ...frontMatter,
+  };
+}
+
+function withoutSchemaReference<T extends { $schema?: string }>(frontMatter: T): Omit<T, '$schema'> {
+  const { $schema: _schema, ...rest } = frontMatter;
+  return rest;
 }
 
 function allocateId(prefix: string) {
@@ -343,12 +373,12 @@ export function parseCharacterBinding(path: string): CharacterBinding | null {
 
 export function serializeCharacterRegex(regex: TavernRegex) {
   const { script_name: _scriptName, replace_string, ...frontMatter } = regex;
-  return stringifyFrontMatter(frontMatter, replace_string);
+  return stringifyFrontMatter(withSchemaReference(frontMatter, REGEX_YFM_SCHEMA_PATH), replace_string);
 }
 
 export function serializeCharacterScript(script: Script) {
   const { name: _name, content, ...frontMatter } = script;
-  return stringifyFrontMatter(frontMatter, content);
+  return stringifyFrontMatter(withSchemaReference(frontMatter, SCRIPT_YFM_SCHEMA_PATH), content);
 }
 
 async function updateCharacterRegex(
@@ -369,7 +399,7 @@ async function updateCharacterRegex(
   if (previous) {
     if (parsed.kind === 'valid') {
       nextRegex = tavernRegexSchema.parse({
-        ...parsed.frontMatter,
+        ...withoutSchemaReference(parsed.frontMatter),
         script_name: scriptName,
         replace_string: parsed.body,
       });
@@ -394,7 +424,7 @@ async function updateCharacterRegex(
         invalidPathDetail(`${toCharacterRootPath(characterName)}/Regex/${scriptName}`),
       ]);
     }
-    const frontMatter = parsed.kind === 'missing' ? createDefaultCharacterRegexFrontMatter() : parsed.frontMatter;
+    const frontMatter = parsed.kind === 'missing' ? createDefaultCharacterRegexFrontMatter() : withoutSchemaReference(parsed.frontMatter);
     nextRegex = tavernRegexSchema.parse({
       ...frontMatter,
       script_name: scriptName,
@@ -440,7 +470,7 @@ async function updateCharacterScript(
   if (previous) {
     if (parsed.kind === 'valid') {
       nextScript = scriptSchema.parse({
-        ...parsed.frontMatter,
+        ...withoutSchemaReference(parsed.frontMatter),
         name: scriptName,
         content: parsed.body,
       });
@@ -465,7 +495,7 @@ async function updateCharacterScript(
         invalidPathDetail(`${toCharacterRootPath(characterName)}/Scripts/${scriptName}`),
       ]);
     }
-    const frontMatter = parsed.kind === 'missing' ? createDefaultCharacterScriptFrontMatter() : parsed.frontMatter;
+    const frontMatter = parsed.kind === 'missing' ? createDefaultCharacterScriptFrontMatter() : withoutSchemaReference(parsed.frontMatter);
     nextScript = scriptSchema.parse({
       ...frontMatter,
       name: scriptName,

@@ -94,6 +94,17 @@ function downloadBackup(content: string, fileName: string, contentType: string) 
   URL.revokeObjectURL(url);
 }
 
+function downloadBlob(blob: Blob, fileName: string) {
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.setAttribute('download', fileName);
+  document.body.appendChild(anchor);
+  anchor.click();
+  URL.revokeObjectURL(anchor.href);
+  document.body.removeChild(anchor);
+}
+
 async function backupLorebook(worldbookName: string) {
   const data = await SillyTavern.loadWorldInfo(worldbookName);
   if (!data) {
@@ -101,6 +112,25 @@ async function backupLorebook(worldbookName: string) {
   }
 
   downloadBackup(JSON.stringify(data), `${worldbookName}.json`, 'application/json');
+}
+
+async function backupCharacter(characterName: string) {
+  const avatarUrl = `${characterName}.png`;
+  const response = await fetch('/api/characters/export', {
+    method: 'POST',
+    headers: SillyTavern.getRequestHeaders(),
+    body: JSON.stringify({
+      format: 'json',
+      avatar_url: avatarUrl,
+    }),
+  });
+
+  if (!response.ok) {
+    throw new ToolError('tool_use_error', `角色卡 '${characterName}' 备份失败: ${response.status}`);
+  }
+
+  const blob = await response.blob();
+  downloadBlob(blob, avatarUrl.replace(/\.png$/i, '.json'));
 }
 
 async function ensureScopePermission(scope: PermissionScope, operation: 'read' | 'write' | 'delete') {
@@ -124,7 +154,7 @@ async function ensureScopePermission(scope: PermissionScope, operation: 'read' |
           appendAtEnd: true,
         },
         ...(operation === 'write'
-          && scope.kind === 'lorebook'
+          && (scope.kind === 'lorebook' || scope.kind === 'character')
           ? [
               {
                 text: `备份 '${scope.displayPath}' 并始终允许`,
@@ -143,7 +173,11 @@ async function ensureScopePermission(scope: PermissionScope, operation: 'read' |
     return;
   }
   if (result === SillyTavern.POPUP_RESULT.CUSTOM2) {
-    await backupLorebook(scope.name);
+    if (scope.kind === 'lorebook') {
+      await backupLorebook(scope.name);
+    } else {
+      await backupCharacter(scope.name);
+    }
     upsertGrantedPermission(scope, level);
     return;
   }

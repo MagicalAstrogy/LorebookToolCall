@@ -2,10 +2,38 @@ import type { z } from 'zod';
 import { ensurePathPermission } from '@/wtc/permission';
 import { ToolError, invalidPathDetail } from '@/wtc/result';
 import { globArgsSchema } from '@/wtc/schema';
-import { globToRegExp, normalizeVirtualPath, parseVirtualPath, relativeFromBase } from '@/wtc/store';
+import { globToRegExp, normalizeVirtualPath, relativeFromBase } from '@/wtc/store';
 import { resolveDirectoryNode } from '@/wtc/node_fs/nodes';
 import { isDirectoryNode } from '@/wtc/node_fs/types';
 import { walkDirectory } from '@/wtc/node_fs/walk';
+
+function splitAbsoluteGlobPattern(pattern: string) {
+  const normalized = normalizeVirtualPath(pattern);
+  if (!normalized) {
+    return {
+      basePath: null,
+      pattern: '*',
+    };
+  }
+  if (normalized === '/') {
+    return {
+      basePath: normalized,
+      pattern: '*',
+    };
+  }
+  const trimmed = normalized.replace(/\/+$/, '');
+  const lastSlashIndex = trimmed.lastIndexOf('/');
+  if (lastSlashIndex <= 0) {
+    return {
+      basePath: '/',
+      pattern: trimmed.slice(1) || '*',
+    };
+  }
+  return {
+    basePath: trimmed.slice(0, lastSlashIndex),
+    pattern: trimmed.slice(lastSlashIndex + 1) || '*',
+  };
+}
 
 function resolveGlobInputs(args: z.infer<typeof globArgsSchema>) {
   if (args.path) {
@@ -22,18 +50,7 @@ function resolveGlobInputs(args: z.infer<typeof globArgsSchema>) {
     };
   }
 
-  const parsed = parseVirtualPath(args.pattern);
-  if (parsed.rootKind !== 'lorebook') {
-    return {
-      basePath: parsed.normalized,
-      pattern: '*',
-    };
-  }
-
-  return {
-    basePath: `/Worldbooks/${parsed.entityName}`,
-    pattern: parsed.relativePath ?? '*',
-  };
+  return splitAbsoluteGlobPattern(args.pattern);
 }
 
 export async function globAction(args: z.infer<typeof globArgsSchema>) {

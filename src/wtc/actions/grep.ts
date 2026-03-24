@@ -12,7 +12,7 @@ export async function grepAction(args: z.infer<typeof grepArgsSchema>) {
   const parsed = parseVirtualPath(args.path);
   const { normalized } = parsed;
   if (parsed.rootKind === 'root' || parsed.rootKind === 'lorebooks_root' || parsed.rootKind === 'characters_root') {
-    throw new ToolError('InputValidationError', 'Grep.path 必须落在某一个确定的 Worldbook 或 Character 子树内。', [
+    throw new ToolError('InputValidationError', 'Grep.path 必须落在某一个确定的 Worldbook、Character 或 /Schemas 子树内。', [
       invalidPathDetail(args.path, 'path'),
     ]);
   }

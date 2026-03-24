@@ -179,7 +179,7 @@ describe('writeAction', () => {
       replace_string: 'body only',
       enabled: true,
       find_regex: '',
-      trim_strings: '',
+      trim_strings: [],
       run_on_edit: false,
     });
   });
@@ -196,7 +196,7 @@ describe('writeAction', () => {
                 enabled: false,
                 find_regex: 'foo',
                 replace_string: 'old body',
-                trim_strings: ' ',
+                trim_strings: [' '],
                 source: {
                   user_input: true,
                   ai_output: false,
@@ -229,10 +229,134 @@ describe('writeAction', () => {
       replace_string: 'new body only',
       enabled: false,
       find_regex: 'foo',
-      trim_strings: ' ',
+      trim_strings: [' '],
       run_on_edit: true,
       min_depth: 1,
       max_depth: 2,
+    });
+  });
+
+  test('creates Regex files with array trim_strings in front matter', async () => {
+    const mock = installMockSillyTavern({
+      characters: {
+        Alice: {},
+      },
+    });
+
+    const result = await writeAction({
+      file_path: '/Characters/Alice/Regex/Normalize',
+      content: [
+        '---',
+        '$schema: /Schemas/Regex.json',
+        'id: regex-1',
+        'enabled: true',
+        'find_regex: foo',
+        'trim_strings: []',
+        'source:',
+        '  user_input: false',
+        '  ai_output: true',
+        '  slash_command: false',
+        '  world_info: false',
+        'destination:',
+        '  display: true',
+        '  prompt: true',
+        'run_on_edit: true',
+        'min_depth: null',
+        'max_depth: null',
+        '---',
+        'bar',
+      ].join('\n'),
+    });
+
+    expect(result.type).toBe('create');
+    expect(mock.characters.get('Alice')?.extensions.regex_scripts?.[0]).toMatchObject({
+      script_name: 'Normalize',
+      replace_string: 'bar',
+      trim_strings: [],
+    });
+    expect(mock.characters.get('Alice')?.extensions.regex_scripts?.[0]).not.toHaveProperty('$schema');
+  });
+
+  test('creates Script files with $schema in front matter', async () => {
+    const mock = installMockSillyTavern({
+      characters: {
+        Alice: {},
+      },
+    });
+
+    const result = await writeAction({
+      file_path: '/Characters/Alice/Scripts/Setup',
+      content: [
+        '---',
+        '$schema: /Schemas/Script.json',
+        'type: script',
+        'enabled: true',
+        'id: script-1',
+        'info: bootstrap',
+        'button:',
+        '  enabled: false',
+        '  buttons: []',
+        'data: {}',
+        '---',
+        'console.log(1)',
+      ].join('\n'),
+    });
+
+    expect(result.type).toBe('create');
+    expect(mock.characters.get('Alice')?.extensions.tavern_helper?.scripts?.[0]).toMatchObject({
+      type: 'script',
+      name: 'Setup',
+      content: 'console.log(1)',
+      enabled: true,
+      id: 'script-1',
+      info: 'bootstrap',
+    });
+    expect(mock.characters.get('Alice')?.extensions.tavern_helper?.scripts?.[0]).not.toHaveProperty('$schema');
+  });
+
+  test('normalizes legacy string trim_strings into array on update', async () => {
+    const mock = installMockSillyTavern({
+      characters: {
+        Alice: {
+          extensions: {
+            regex_scripts: [
+              {
+                id: 'regex-1',
+                script_name: 'Normalize',
+                enabled: true,
+                find_regex: 'foo',
+                replace_string: 'old body',
+                trim_strings: ' ',
+                source: {
+                  user_input: false,
+                  ai_output: true,
+                  slash_command: false,
+                  world_info: false,
+                },
+                destination: {
+                  display: true,
+                  prompt: false,
+                },
+                run_on_edit: false,
+                min_depth: null,
+                max_depth: null,
+              } as unknown as TavernRegex,
+            ],
+          },
+        },
+      },
+    });
+
+    const result = await writeAction({
+      file_path: '/Characters/Alice/Regex/Normalize',
+      content: 'new body only',
+    });
+
+    expect(result.type).toBe('update');
+    expect(mock.characters.get('Alice')?.extensions.regex_scripts?.[0]).toMatchObject({
+      script_name: 'Normalize',
+      replace_string: 'new body only',
+      trim_strings: [' '],
     });
   });
 

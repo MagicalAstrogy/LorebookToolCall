@@ -27,8 +27,10 @@ export interface PathIndex {
 
 export const LOREBOOKS_ROOT_NAME = 'Worldbooks';
 export const CHARACTERS_ROOT_NAME = 'Characters';
+export const SCHEMAS_ROOT_NAME = 'Schemas';
 export const LOREBOOKS_ROOT_PATH = `/${LOREBOOKS_ROOT_NAME}`;
 export const CHARACTERS_ROOT_PATH = `/${CHARACTERS_ROOT_NAME}`;
+export const SCHEMAS_ROOT_PATH = `/${SCHEMAS_ROOT_NAME}`;
 
 export type ParsedVirtualPath =
   | {
@@ -39,7 +41,7 @@ export type ParsedVirtualPath =
     }
   | {
       normalized: string;
-      rootKind: 'lorebooks_root' | 'characters_root';
+      rootKind: 'lorebooks_root' | 'characters_root' | 'schemas_root';
       entityName: null;
       relativePath: null;
     }
@@ -52,6 +54,12 @@ export type ParsedVirtualPath =
   | {
       normalized: string;
       rootKind: 'character';
+      entityName: string;
+      relativePath: string | null;
+    }
+  | {
+      normalized: string;
+      rootKind: 'schema';
       entityName: string;
       relativePath: string | null;
     };
@@ -132,7 +140,23 @@ export function parseVirtualPath(input: string) {
       relativePath: rest.length > 0 ? rest.join('/') : null,
     } satisfies ParsedVirtualPath;
   }
-  throw new ToolError('InputValidationError', '路径必须位于 /Worldbooks 或 /Characters 下。', [invalidPathDetail(input)]);
+  if (rootSegment === SCHEMAS_ROOT_NAME) {
+    if (!entityName) {
+      return {
+        normalized,
+        rootKind: 'schemas_root',
+        entityName: null,
+        relativePath: null,
+      } satisfies ParsedVirtualPath;
+    }
+    return {
+      normalized,
+      rootKind: 'schema',
+      entityName,
+      relativePath: rest.length > 0 ? rest.join('/') : null,
+    } satisfies ParsedVirtualPath;
+  }
+  throw new ToolError('InputValidationError', '路径必须位于 /Worldbooks、/Characters 或 /Schemas 下。', [invalidPathDetail(input)]);
 }
 
 export function requireLorebookFileTarget(input: string) {
@@ -266,6 +290,7 @@ export function listCandidatesUnder(index: PathIndex, basePath: string) {
   if (normalizedBase === '/') {
     candidates.add(`${CHARACTERS_ROOT_PATH}/`);
     candidates.add(`${LOREBOOKS_ROOT_PATH}/`);
+    candidates.add(`${SCHEMAS_ROOT_PATH}/`);
     return [...candidates].sort();
   }
 

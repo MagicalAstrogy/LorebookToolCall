@@ -16,6 +16,7 @@ export async function readAction(args: z.infer<typeof readArgsSchema>) {
     parsed.rootKind === 'root' ||
     parsed.rootKind === 'lorebooks_root' ||
     parsed.rootKind === 'characters_root' ||
+    parsed.rootKind === 'schemas_root' ||
     ((parsed.rootKind === 'lorebook' || parsed.rootKind === 'character') && parsed.relativePath === null)
   ) {
     throw new ToolError('InputValidationError', 'Read 只接受具体文件路径，不能读取目录。', [invalidPathDetail(args.file_path)]);

@@ -23,21 +23,23 @@
         <div class="WtcDirectoryBrowser__paneTitle">内容</div>
         <div class="WtcDirectoryBrowser__previewPath">{{ preview.path }}</div>
 
-        <div v-if="preview.status === 'loading'" class="WtcDirectoryBrowser__message">读取中...</div>
-        <div v-else-if="preview.status === 'error'" class="WtcDirectoryBrowser__message WtcDirectoryBrowser__message--error">
-          {{ preview.message }}
+        <div class="WtcDirectoryBrowser__previewBody">
+          <div v-if="preview.status === 'loading'" class="WtcDirectoryBrowser__message">读取中...</div>
+          <div v-else-if="preview.status === 'error'" class="WtcDirectoryBrowser__message WtcDirectoryBrowser__message--error">
+            {{ preview.message }}
+          </div>
+          <div v-else-if="preview.status === 'text'" class="WtcDirectoryBrowser__previewText">
+            <pre>{{ preview.content }}</pre>
+          </div>
+          <div v-else-if="preview.status === 'directory'" class="WtcDirectoryBrowser__previewMeta">
+            <div>{{ preview.summary }}</div>
+          </div>
+          <div v-else-if="preview.status === 'symlink'" class="WtcDirectoryBrowser__previewMeta">
+            <div>这是一个链接节点。</div>
+            <div>目标：{{ preview.target }}</div>
+          </div>
+          <div v-else class="WtcDirectoryBrowser__message">请选择一个节点。</div>
         </div>
-        <div v-else-if="preview.status === 'text'" class="WtcDirectoryBrowser__previewText">
-          <pre>{{ preview.content }}</pre>
-        </div>
-        <div v-else-if="preview.status === 'directory'" class="WtcDirectoryBrowser__previewMeta">
-          <div>{{ preview.summary }}</div>
-        </div>
-        <div v-else-if="preview.status === 'symlink'" class="WtcDirectoryBrowser__previewMeta">
-          <div>这是一个链接节点。</div>
-          <div>目标：{{ preview.target }}</div>
-        </div>
-        <div v-else class="WtcDirectoryBrowser__message">请选择一个节点。</div>
       </section>
     </div>
   </div>
@@ -90,7 +92,7 @@ async function createBrowserTreeNode(node: Node): Promise<BrowserTreeNode> {
     readable: stat.readable,
     writable: stat.writable,
     node,
-    expanded: stat.path === '/',
+    expanded: false,
     loading: false,
     loaded: false,
     children: [],
@@ -103,7 +105,6 @@ async function ensureRootNode() {
     return rootNode.value;
   }
   const nextRoot = await createBrowserTreeNode(new RootNode());
-  nextRoot.expanded = true;
   rootNode.value = nextRoot;
   return nextRoot;
 }
@@ -262,8 +263,7 @@ watch(
 
 .WtcDirectoryBrowser__body {
   display: grid;
-  grid-template-rows: minmax(250px, 1fr) minmax(220px, 0.9fr);
-  min-height: 560px;
+  grid-template-rows: 600px 600px;
   border: 1px solid var(--SmartThemeBorderColor, var(--grey5050a));
   border-radius: 16px;
   background:
@@ -272,6 +272,10 @@ watch(
 }
 
 .WtcDirectoryBrowser__pane {
+  display: flex;
+  flex-direction: column;
+  height: 600px;
+  max-height: 600px;
   min-height: 0;
   padding: 16px 20px 20px;
 }
@@ -290,14 +294,19 @@ watch(
 }
 
 .WtcDirectoryBrowser__tree,
-.WtcDirectoryBrowser__previewText,
-.WtcDirectoryBrowser__previewMeta {
-  height: calc(100% - 28px);
+.WtcDirectoryBrowser__previewBody {
+  flex: 1;
   min-height: 0;
-  overflow: auto;
+  overflow-y: auto;
+  overflow-x: hidden;
   border-radius: 12px;
   background: color-mix(in srgb, var(--black100, #0f1115) 34%, transparent);
   padding: 12px;
+}
+
+.WtcDirectoryBrowser__previewText,
+.WtcDirectoryBrowser__previewMeta {
+  min-height: 100%;
 }
 
 .WtcDirectoryBrowser__previewPath {
@@ -324,16 +333,15 @@ watch(
 }
 
 .WtcDirectoryBrowser__message {
+  min-height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
   opacity: 0.84;
 }
 
 .WtcDirectoryBrowser__message--error {
   color: var(--crimson70, #d24c63);
-}
-
-@media (max-width: 900px) {
-  .WtcDirectoryBrowser__body {
-    min-height: 620px;
-  }
 }
 </style>

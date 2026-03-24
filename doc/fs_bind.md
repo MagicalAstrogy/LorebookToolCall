@@ -407,7 +407,7 @@ const characterRegexFrontMatterSchema = z.object({
   id: z.string(),
   enabled: z.boolean(),
   find_regex: z.string(),
-  trim_strings: z.string(),
+  trim_strings: z.array(z.string()),
   source: z.object({
     user_input: z.boolean(),
     ai_output: z.boolean(),

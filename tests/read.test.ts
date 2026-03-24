@@ -259,7 +259,7 @@ describe('readAction', () => {
                 enabled: true,
                 find_regex: 'foo',
                 replace_string: 'bar',
-                trim_strings: '',
+                trim_strings: [],
                 source: {
                   user_input: true,
                   ai_output: false,
@@ -286,6 +286,7 @@ describe('readAction', () => {
 
     expect(result.type).toBe('text');
     expect(result.file.filePath).toBe('/Characters/Alice/Regex/Normalize');
+    expect(result.file.content).toContain('$schema: /Schemas/Regex.json');
     expect(result.file.content).toContain('find_regex: foo');
     expect(result.file.content).toContain('\tbar');
   });
@@ -324,6 +325,7 @@ describe('readAction', () => {
 
     expect(result.type).toBe('text');
     expect(result.file.filePath).toBe('/Characters/Alice/Scripts/Setup');
+    expect(result.file.content).toContain('$schema: /Schemas/Script.json');
     expect(result.file.content).toContain('info: bootstrap');
     expect(result.file.content).toContain('\tconsole.log("hello")');
   });

@@ -149,7 +149,7 @@ describe('node_fs node guards and root/lorebook nodes', () => {
     expect(await root.getChild('')).toBeNull();
     expect(await root.getChild('非法/名称')).toBeNull();
     expect(await root.getChild('Worldbooks')).not.toBeNull();
-    expect(await collectPaths(root.list())).toStrictEqual(['/Characters', '/Worldbooks']);
+    expect(await collectPaths(root.list())).toStrictEqual(['/Characters', '/Worldbooks', '/Schemas']);
 
     const lorebook = new LorebookNode('设定集');
     expect(await lorebook.stat()).toStrictEqual({

@@ -17,10 +17,25 @@ describe('globAction', () => {
       },
     });
 
-    const result = await globAction({ pattern: '*' });
+    const result = await globAction({ pattern: '*', path: "/" });
 
     expect(result).toStrictEqual({
-      filenames: ['/Characters/', '/Worldbooks/'],
+      filenames: ['/Characters/', '/Schemas/', '/Worldbooks/'],
+      durationMs: 0,
+      numFiles: 3,
+      truncated: false,
+    });
+  });
+
+  test('lists exported schema json files under the Schemas root', async () => {
+    installMockSillyTavern({
+      books: {},
+    });
+
+    const result = await globAction({ path: '/Schemas', pattern: '*' });
+
+    expect(result).toStrictEqual({
+      filenames: ['/Schemas/Regex.json', '/Schemas/Script.json'],
       durationMs: 0,
       numFiles: 2,
       truncated: false,
@@ -69,13 +84,16 @@ describe('globAction', () => {
         '/Characters/Alice/FirstMessages/',
         '/Characters/Alice/Regex/',
         '/Characters/Alice/Scripts/',
+        '/Schemas/',
+        '/Schemas/Regex.json',
+        '/Schemas/Script.json',
         '/Worldbooks/',
         '/Worldbooks/设定集/',
         '/Worldbooks/设定集/Folder/',
         '/Worldbooks/设定集/Folder/Entry',
       ],
       durationMs: 0,
-      numFiles: 10,
+      numFiles: 13,
       truncated: false,
     });
   });

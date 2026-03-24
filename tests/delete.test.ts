@@ -80,7 +80,7 @@ describe('deleteAction', () => {
                 enabled: true,
                 find_regex: 'foo',
                 replace_string: 'bar',
-                trim_strings: '',
+                trim_strings: [],
                 source: {
                   user_input: true,
                   ai_output: false,
