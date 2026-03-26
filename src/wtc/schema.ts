@@ -236,7 +236,7 @@ export const worldbookEntryPatchSchema: z.ZodType<any> = z
       })
       .describe('激活效果：控制黏性、冷却和聊天轮次延迟。')
       .optional(),
-    extra: z.record(z.string(), z.any()).optional().describe('绑定在条目上的额外自定义字段。'),
+    extra: z.object({}).passthrough().optional().describe('绑定在条目上的额外自定义字段。'),
 
   })
   .describe('WorldbookEntry 的 lossy patch 版本：对象递归合并、数组整体替换、未提供字段保持原值。')
@@ -257,9 +257,34 @@ export const setAttributeArgsSchema = z
   })
   .describe('SetAttribute 工具参数：以 lossy patch 方式更新世界书条目属性。');
 
+// Make AI Studio Happy
+function stripAdditionalPropertiesDeep(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map(stripAdditionalPropertiesDeep);
+  }
+
+  if (!value || typeof value !== 'object') {
+    return value;
+  }
+
+  const record = value as Record<string, unknown>;
+  const next: Record<string, unknown> = {};
+
+  for (const [key, child] of Object.entries(record)) {
+    if (key === 'additionalProperties') {
+      continue;
+    }
+    next[key] = stripAdditionalPropertiesDeep(child);
+  }
+
+  return next;
+}
+
 export function validationSchemaToJson(schema: z.ZodTypeAny): Record<string, any> {
   // SillyTavern 工具注册需要 JSON Schema，因此在注册阶段做一次转换。
-  return z.toJSONSchema(schema, {
-    target: 'draft-2020-12',
-  }) as Record<string, any>;
+  return stripAdditionalPropertiesDeep(
+    z.toJSONSchema(schema, {
+      target: 'draft-2020-12',
+    }),
+  ) as Record<string, any>;
 }
