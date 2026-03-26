@@ -178,6 +178,39 @@ describe('grepAction', () => {
     });
   });
 
+  // 校验 Grep 会把 preset prompt 的 YFM 文本纳入搜索，并保留 Current 别名路径。
+  test('searches preset prompt YFM files through the Current alias', async () => {
+    installMockSillyTavern({
+      presets: {
+        Alpha: {
+          prompts: [
+            {
+              id: 'main',
+              name: 'System/Main',
+              enabled: true,
+              position: { type: 'relative' },
+              role: 'system',
+              content: 'hello preset',
+            },
+          ],
+        },
+      },
+      loadedPresetName: 'Alpha',
+    });
+
+    const result = await grepAction({
+      path: '/Presets/Current',
+      pattern: 'id: main',
+      output_mode: 'files_with_matches',
+    });
+
+    expect(result).toStrictEqual({
+      mode: 'files_with_matches',
+      filenames: ['/Presets/Current/System/Main'],
+      numFiles: 1,
+    });
+  });
+
   test('rejects root or collection paths and invalid regex pattern', async () => {
     installMockSillyTavern({
       books: {

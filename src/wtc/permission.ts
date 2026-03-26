@@ -1,5 +1,6 @@
 import { ToolError } from '@/wtc/result';
-import { CHARACTERS_ROOT_PATH, LOREBOOKS_ROOT_PATH, normalizeVirtualPath, parseVirtualPath } from '@/wtc/store';
+import { CHARACTERS_ROOT_PATH, LOREBOOKS_ROOT_PATH, PRESETS_ROOT_PATH, normalizeVirtualPath, parseVirtualPath } from '@/wtc/store';
+import { resolvePermissionPresetName } from '@/wtc/fs_bind';
 import { readonly, shallowReactive } from 'vue';
 
 export type PermissionLevel = 1 | 2 | 3;
@@ -7,7 +8,7 @@ export type PermissionLevel = 1 | 2 | 3;
 type PermissionScope = {
   cacheKey: string;
   displayPath: string;
-  kind: 'lorebook' | 'character';
+  kind: 'lorebook' | 'character' | 'preset';
   name: string;
 };
 
@@ -212,6 +213,19 @@ export async function ensureCharacterPermission(characterName: string, operation
   );
 }
 
+export async function ensurePresetPermission(presetName: string, operation: 'read' | 'write' | 'delete') {
+  // Preset 的权限粒度固定到 /Presets/<PresetName>，不再细分到单个 prompt。
+  return ensureScopePermission(
+    {
+      cacheKey: `preset:${presetName}`,
+      displayPath: `${PRESETS_ROOT_PATH}/${presetName}`,
+      kind: 'preset',
+      name: presetName,
+    },
+    operation,
+  );
+}
+
 export async function ensurePathPermission(
   path: string,
   operation: 'read' | 'write' | 'delete',
@@ -224,6 +238,14 @@ export async function ensurePathPermission(
   const parsed = parseVirtualPath(normalized);
   if (parsed.rootKind === 'lorebook') {
     await ensureLorebookPermission(parsed.entityName, operation);
+    return;
+  }
+  if (parsed.rootKind === 'preset') {
+    // Current alias 的授权要折算到真实 preset 名，避免缓存键漂移在虚拟别名上。
+    const presetName = resolvePermissionPresetName(normalized);
+    if (presetName) {
+      await ensurePresetPermission(presetName, operation);
+    }
     return;
   }
   if (parsed.rootKind !== 'character') {

@@ -18,6 +18,8 @@ interface MockBook {
 interface MockOptions {
   books?: Record<string, MockBook | null>;
   characters?: Record<string, PartialDeep<Character>>;
+  presets?: Record<string, PartialDeep<Preset>>;
+  loadedPresetName?: string;
   popupResult?: PopupResult;
 }
 
@@ -115,10 +117,51 @@ function createDefaultCharacter(name: string): Character {
   };
 }
 
+function createDefaultPreset(): Preset {
+  // 只补齐当前测试会依赖的最小 preset 结构，避免每个用例都手写完整默认值。
+  return {
+    settings: {
+      max_context: 8192,
+      max_completion_tokens: 1024,
+      reply_count: 1,
+      should_stream: true,
+      temperature: 1,
+      frequency_penalty: 0,
+      presence_penalty: 0,
+      top_p: 1,
+      repetition_penalty: 1,
+      min_p: 0,
+      top_k: 0,
+      top_a: 0,
+      seed: -1,
+      squash_system_messages: false,
+      reasoning_effort: 'auto',
+      request_thoughts: false,
+      request_images: false,
+      enable_function_calling: true,
+      enable_web_search: false,
+      allow_sending_images: 'auto',
+      allow_sending_videos: false,
+      character_name_prefix: 'none',
+      wrap_user_messages_in_quotes: false,
+    },
+    prompts: [],
+    prompts_unused: [],
+    extensions: {
+      regex_scripts: [],
+      tavern_helper: {
+        scripts: [],
+        variales: {},
+      },
+    },
+  };
+}
+
 function buildState(options: MockOptions) {
   const rawBooks = new Map<string, MockBook | null>();
   const worldbooks = new Map<string, WorldbookEntry[]>();
   const characters = new Map<string, Character>();
+  const presets = new Map<string, Preset>();
   let nextUid = 1;
 
   for (const [name, book] of Object.entries(options.books ?? {})) {
@@ -144,6 +187,11 @@ function buildState(options: MockOptions) {
   for (const [name, partial] of Object.entries(options.characters ?? {})) {
     const base = createDefaultCharacter(name);
     characters.set(name, _.merge(structuredClone(base), structuredClone(partial)));
+  }
+
+  for (const [name, partial] of Object.entries(options.presets ?? {})) {
+    const base = createDefaultPreset();
+    presets.set(name, _.merge(structuredClone(base), structuredClone(partial)));
   }
 
   function ensureWorldbook(name: string) {
@@ -177,6 +225,7 @@ function buildState(options: MockOptions) {
     rawBooks,
     worldbooks,
     characters,
+    presets,
     ensureWorldbook,
     syncRawFromWorldbook,
     allocateUid() {
@@ -190,6 +239,7 @@ function buildState(options: MockOptions) {
 export function installMockSillyTavern(options: MockOptions = {}) {
   const popupCalls: Array<{ message: string; type: string; value: string; options: Record<string, unknown> }> = [];
   const state = buildState(options);
+  let loadedPresetName = options.loadedPresetName ?? [...state.presets.keys()][0] ?? 'Default';
 
   const mock: MockSillyTavern = {
     POPUP_TYPE: {
@@ -245,6 +295,29 @@ export function installMockSillyTavern(options: MockOptions = {}) {
 
   (globalThis as any).getWorldbookNames = () => [...state.rawBooks.keys()];
   (globalThis as any).getCharacterNames = () => [...state.characters.keys()];
+  (globalThis as any).getPresetNames = () => [...state.presets.keys()];
+  (globalThis as any).getLoadedPresetName = () => loadedPresetName;
+  // preset mock 只实现当前绑定层/工具层实际会调用到的宿主接口。
+  (globalThis as any).getPreset = (name: string) => {
+    const preset = state.presets.get(name);
+    if (!preset) {
+      throw new Error(`Preset '${name}' not found.`);
+    }
+    return structuredClone(preset);
+  };
+  (globalThis as any).replacePreset = async (name: string, preset: Preset) => {
+    if (!state.presets.has(name)) {
+      throw new Error(`Preset '${name}' not found.`);
+    }
+    state.presets.set(name, structuredClone(preset));
+  };
+  (globalThis as any).loadPreset = (name: string) => {
+    if (!state.presets.has(name)) {
+      return false;
+    }
+    loadedPresetName = name;
+    return true;
+  };
   (globalThis as any).getCurrentCharacterName = () => {
     const first = state.characters.keys().next();
     return first.done ? null : first.value;
@@ -338,6 +411,7 @@ export function installMockSillyTavern(options: MockOptions = {}) {
     rawBooks: state.rawBooks,
     worldbooks: state.worldbooks,
     characters: state.characters,
+    presets: state.presets,
   };
 }
 

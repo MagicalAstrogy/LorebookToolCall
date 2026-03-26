@@ -18,7 +18,8 @@ import {
   isWritableDirectoryNode,
 } from '@/wtc/node_fs/types';
 import { basenameFromPath } from '@/wtc/node_fs/helpers';
-import { resolveDirectoryNode } from '@/wtc/node_fs/resolve';
+import { LorebookNode } from '@/wtc/node_fs/lorebook_node';
+import { parseVirtualPath } from '@/wtc/store';
 
 function rewriteAliasedPath(targetPath: string, sourceBasePath: string, targetBasePath: string) {
   return `${targetBasePath}${targetPath.slice(sourceBasePath.length)}`;
@@ -172,8 +173,13 @@ export class CharacterWorldbookLinkNode implements SymlinkNode {
   }
 
   private async getTargetDirectory(): Promise<DirectoryNode | null> {
-    const node = await resolveDirectoryNode(this.targetPath);
-    return node;
+    // 当前 Character.worldbook alias 只允许指向 /Worldbooks/<name> 根目录。
+    // 如果未来需要支持指向 worldbook 子目录或其他任意目录，再回到通用 resolve 方案。
+    const parsed = parseVirtualPath(this.targetPath);
+    if (parsed.rootKind !== 'lorebook' || parsed.relativePath !== null) {
+      return null;
+    }
+    return new LorebookNode(parsed.entityName);
   }
 
   async getChild(name: string): Promise<Node | null> {

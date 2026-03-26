@@ -18,18 +18,29 @@ export interface IndexedEntry {
   raw: SillyTavern.v2DataWorldInfoEntry;
 }
 
-export interface PathIndex {
-  files: IndexedEntry[];
+export interface PathMappedEntry<TRaw = unknown> {
+  // 将宿主对象投影到虚拟文件系统后的通用文件项形状。
+  filePath: string;
+  entryPath: string;
+  uid: number;
+  raw: TRaw;
+}
+
+export interface PathIndex<TEntry extends PathMappedEntry = PathMappedEntry> {
+  // 这组索引是所有“路径映射型”文件树的公共最小集合。
+  files: TEntry[];
   directories: string[];
-  exactFiles: Map<string, IndexedEntry>;
+  exactFiles: Map<string, TEntry>;
   conflicts: Set<string>;
 }
 
 export const LOREBOOKS_ROOT_NAME = 'Worldbooks';
 export const CHARACTERS_ROOT_NAME = 'Characters';
+export const PRESETS_ROOT_NAME = 'Presets';
 export const SCHEMAS_ROOT_NAME = 'Schemas';
 export const LOREBOOKS_ROOT_PATH = `/${LOREBOOKS_ROOT_NAME}`;
 export const CHARACTERS_ROOT_PATH = `/${CHARACTERS_ROOT_NAME}`;
+export const PRESETS_ROOT_PATH = `/${PRESETS_ROOT_NAME}`;
 export const SCHEMAS_ROOT_PATH = `/${SCHEMAS_ROOT_NAME}`;
 
 export type ParsedVirtualPath =
@@ -41,7 +52,7 @@ export type ParsedVirtualPath =
     }
   | {
       normalized: string;
-      rootKind: 'lorebooks_root' | 'characters_root' | 'schemas_root';
+      rootKind: 'lorebooks_root' | 'characters_root' | 'presets_root' | 'schemas_root';
       entityName: null;
       relativePath: null;
     }
@@ -54,6 +65,12 @@ export type ParsedVirtualPath =
   | {
       normalized: string;
       rootKind: 'character';
+      entityName: string;
+      relativePath: string | null;
+    }
+  | {
+      normalized: string;
+      rootKind: 'preset';
       entityName: string;
       relativePath: string | null;
     }
@@ -140,6 +157,22 @@ export function parseVirtualPath(input: string) {
       relativePath: rest.length > 0 ? rest.join('/') : null,
     } satisfies ParsedVirtualPath;
   }
+  if (rootSegment === PRESETS_ROOT_NAME) {
+    if (!entityName) {
+      return {
+        normalized,
+        rootKind: 'presets_root',
+        entityName: null,
+        relativePath: null,
+      } satisfies ParsedVirtualPath;
+    }
+    return {
+      normalized,
+      rootKind: 'preset',
+      entityName,
+      relativePath: rest.length > 0 ? rest.join('/') : null,
+    } satisfies ParsedVirtualPath;
+  }
   if (rootSegment === SCHEMAS_ROOT_NAME) {
     if (!entityName) {
       return {
@@ -156,7 +189,9 @@ export function parseVirtualPath(input: string) {
       relativePath: rest.length > 0 ? rest.join('/') : null,
     } satisfies ParsedVirtualPath;
   }
-  throw new ToolError('InputValidationError', '路径必须位于 /Worldbooks、/Characters 或 /Schemas 下。', [invalidPathDetail(input)]);
+  throw new ToolError('InputValidationError', '路径必须位于 /Worldbooks、/Characters、/Presets 或 /Schemas 下。', [
+    invalidPathDetail(input),
+  ]);
 }
 
 export function requireLorebookFileTarget(input: string) {
@@ -180,6 +215,10 @@ export function toLorebookRootPath(worldbookName: string) {
 
 export function toCharacterRootPath(characterName: string) {
   return `${CHARACTERS_ROOT_PATH}/${characterName}`;
+}
+
+export function toPresetRootPath(presetName: string) {
+  return `${PRESETS_ROOT_PATH}/${presetName}`;
 }
 
 export async function loadRawWorldbook(worldbookName: string): Promise<RawBook> {
@@ -226,7 +265,7 @@ export async function withWorldbookQueue<T>(worldbookName: string, action: () =>
   }
 }
 
-export function buildPathIndex(worldbookName: string, book: RawBook, basePath = toLorebookRootPath(worldbookName)): PathIndex {
+export function buildPathIndex(worldbookName: string, book: RawBook, basePath = toLorebookRootPath(worldbookName)): PathIndex<IndexedEntry> {
   // 世界书里的 comment 被视为虚拟文件路径；同时派生目录集合和冲突集合。
   const exactFiles = new Map<string, IndexedEntry>();
   const conflicts = new Set<string>();
@@ -268,13 +307,13 @@ export function buildPathIndex(worldbookName: string, book: RawBook, basePath = 
   };
 }
 
-export function ensureNoConflict(index: PathIndex, filePath: string) {
+export function ensureNoConflict<TEntry extends PathMappedEntry>(index: PathIndex<TEntry>, filePath: string) {
   if (index.conflicts.has(filePath)) {
     throw new ToolError('PATH_CONFLICT', '出现同名条目，请要求 user 变更对应条目名。');
   }
 }
 
-export function ensureDirectoryPath(index: PathIndex, directoryPath: string) {
+export function ensureDirectoryPath<TEntry extends PathMappedEntry>(index: PathIndex<TEntry>, directoryPath: string) {
   if (directoryPath !== '/' && !directoryPath.endsWith('/')) {
     directoryPath = `${directoryPath}/`;
   }
@@ -283,13 +322,14 @@ export function ensureDirectoryPath(index: PathIndex, directoryPath: string) {
   }
 }
 
-export function listCandidatesUnder(index: PathIndex, basePath: string) {
+export function listCandidatesUnder<TEntry extends PathMappedEntry>(index: PathIndex<TEntry>, basePath: string) {
   const normalizedBase = basePath === '/' ? '/' : `${basePath.replace(/\/+$/, '')}/`;
   const candidates = new Set<string>();
 
   if (normalizedBase === '/') {
     candidates.add(`${CHARACTERS_ROOT_PATH}/`);
     candidates.add(`${LOREBOOKS_ROOT_PATH}/`);
+    candidates.add(`${PRESETS_ROOT_PATH}/`);
     candidates.add(`${SCHEMAS_ROOT_PATH}/`);
     return [...candidates].sort();
   }

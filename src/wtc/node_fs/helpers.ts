@@ -1,12 +1,13 @@
-import type { IndexedEntry } from '@/wtc/store';
+import type { IndexedEntry, PathMappedEntry } from '@/wtc/store';
 import { ensureNoConflict, normalizeVirtualPath } from '@/wtc/store';
-import type { LorebookView } from '@/wtc/node_fs/types';
+import type { PathMappedView } from '@/wtc/node_fs/types';
 
-export type DirectoryChildDescriptor =
+// 目录展开现在同时服务于 Lorebook 和 Preset 两类“路径映射视图”。
+export type DirectoryChildDescriptor<TEntry extends PathMappedEntry = IndexedEntry> =
   | {
       kind: 'file';
       name: string;
-      entry: IndexedEntry;
+      entry: TEntry;
     }
   | {
       kind: 'directory';
@@ -44,7 +45,7 @@ export function comparePath(left: string, right: string) {
   return 0;
 }
 
-function lowerBoundByPath(files: readonly IndexedEntry[], target: string) {
+function lowerBoundByPath(files: readonly PathMappedEntry[], target: string) {
   let low = 0;
   let high = files.length;
   while (low < high) {
@@ -69,7 +70,7 @@ function lowerBoundByPath(files: readonly IndexedEntry[], target: string) {
  * - `fileStart` 是目录下第一条文件的索引
  * - `fileEnd` 是目录下最后一条文件的后一位索引
  */
-export function findDirectoryFileSpan(view: LorebookView, directoryPath: string) {
+export function findDirectoryFileSpan<TEntry extends PathMappedEntry>(view: PathMappedView<TEntry>, directoryPath: string) {
   const normalizedDirectory = directoryPath === view.rootPath ? directoryPath : directoryPath.replace(/\/+$/, '');
   if (normalizedDirectory === view.rootPath) {
     return {
@@ -96,15 +97,15 @@ export function findDirectoryFileSpan(view: LorebookView, directoryPath: string)
  * 结果会直接携带子目录自己的区间，便于后续创建 `VirtualDirectoryNode`
  * 时继续只扫描子区间，而不是重新全量扫描整本世界书。
  */
-export function listImmediateChildren(
-  view: LorebookView,
+export function listImmediateChildren<TEntry extends PathMappedEntry>(
+  view: PathMappedView<TEntry>,
   directoryPath: string,
   fileStart: number,
   fileEnd: number,
-): DirectoryChildDescriptor[] {
+): DirectoryChildDescriptor<TEntry>[] {
   const normalizedDirectory = directoryPath === view.rootPath ? directoryPath : directoryPath.replace(/\/+$/, '');
   const basePrefix = `${normalizedDirectory}/`;
-  const children: DirectoryChildDescriptor[] = [];
+  const children: DirectoryChildDescriptor<TEntry>[] = [];
 
   let index = fileStart;
   while (index < fileEnd) {
@@ -145,7 +146,7 @@ export function listImmediateChildren(
 }
 
 /** 按精确文件路径从 view 中取出对应条目，并在命中冲突时直接失败。 */
-export function entryForFilePath(view: LorebookView, filePath: string) {
+export function entryForFilePath<TEntry extends PathMappedEntry>(view: PathMappedView<TEntry>, filePath: string) {
   // 文件精确访问前先检查冲突；同名冲突时应直接失败，而不是任意挑一个。
   ensureNoConflict(view, filePath);
   return view.exactFiles.get(filePath) ?? null;

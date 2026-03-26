@@ -11,6 +11,7 @@ import { CharactersRootNode } from '../src/wtc/node_fs/characters_root_node';
 import { LorebookEntryNode } from '../src/wtc/node_fs/lorebook_entry_node';
 import { LorebookNode } from '../src/wtc/node_fs/lorebook_node';
 import { LorebooksRootNode } from '../src/wtc/node_fs/lorebooks_root_node';
+import { PresetNode, PresetsRootNode } from '../src/wtc/node_fs/preset_nodes';
 import { resolveDirectoryNode, resolveFileNode, resolveSearchScope, resolveWritableFileNode } from '../src/wtc/node_fs/resolve';
 import { RootNode } from '../src/wtc/node_fs/root_node';
 import { isAttributeNode, isDeletableNode, isDirectoryNode, isTextFileNode } from '../src/wtc/node_fs/types';
@@ -151,7 +152,7 @@ describe('node_fs node guards and root/lorebook nodes', () => {
     expect(await root.getChild('')).toBeNull();
     expect(await root.getChild('非法/名称')).toBeNull();
     expect(await root.getChild('Worldbooks')).not.toBeNull();
-    expect(await collectPaths(root.list())).toStrictEqual(['/Characters', '/Worldbooks', '/Schemas']);
+    expect(await collectPaths(root.list())).toStrictEqual(['/Characters', '/Worldbooks', '/Presets', '/Schemas']);
 
     const lorebook = new LorebookNode('设定集');
     expect(await lorebook.stat()).toStrictEqual({
@@ -165,6 +166,53 @@ describe('node_fs node guards and root/lorebook nodes', () => {
     expect(await collectPaths(lorebook.list())).toStrictEqual(['/Worldbooks/设定集/README']);
     expect(await lorebook.getChild('README')).toBeInstanceOf(LorebookEntryNode);
     expect(await lorebook.getChild('missing')).toBeNull();
+  });
+
+  // 校验 /Presets 目录树的展开方式，以及 Current alias 在 Node FS 层的目录行为。
+  test('supports preset root traversal and Current alias', async () => {
+    installMockSillyTavern({
+      presets: {
+        Alpha: {
+          prompts: [
+            {
+              id: 'main',
+              name: 'System/Main',
+              enabled: true,
+              position: { type: 'relative' },
+              role: 'system',
+              content: 'hello',
+            },
+          ],
+        },
+      },
+      loadedPresetName: 'Alpha',
+    });
+
+    const presetsRoot = new PresetsRootNode();
+    expect(await presetsRoot.stat()).toStrictEqual({
+      path: '/Presets',
+      name: 'Presets',
+      kind: 'directory',
+      readable: true,
+      writable: false,
+    });
+    expect(await collectPaths(presetsRoot.list())).toStrictEqual(['/Presets/Alpha', '/Presets/Current']);
+    expect(await presetsRoot.getChild('Alpha')).toBeInstanceOf(PresetNode);
+
+    const preset = new PresetNode('Alpha');
+    expect(await collectPaths(preset.list())).toStrictEqual(['/Presets/Alpha/System']);
+    const presetSystem = await resolveDirectoryNode('/Presets/Alpha/System');
+    expect(presetSystem && isDirectoryNode(presetSystem) ? await collectPaths(presetSystem.list()) : null).toStrictEqual([
+      '/Presets/Alpha/System/Main',
+    ]);
+    const current = await presetsRoot.getChild('Current');
+    expect(current && isDirectoryNode(current) ? await collectPaths(current.list()) : null).toStrictEqual([
+      '/Presets/Current/System',
+    ]);
+    const currentSystem = await resolveDirectoryNode('/Presets/Current/System');
+    expect(currentSystem && isDirectoryNode(currentSystem) ? await collectPaths(currentSystem.list()) : null).toStrictEqual([
+      '/Presets/Current/System/Main',
+    ]);
   });
 
   // 校验两个根目录都会过滤非法名称，并按排序后的安全名称暴露子节点。

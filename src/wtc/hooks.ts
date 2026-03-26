@@ -262,7 +262,7 @@ let savedRecurseCount = 5;
 export function initHooks() {
 
   savedRecurseCount = SillyTavern.ToolManager.RECURSE_LIMIT;
-  SillyTavern.ToolManager.RECURSE_LIMIT = 20;
+  SillyTavern.ToolManager.RECURSE_LIMIT = 35;
 
   vanillaInvokeFunctionTools = SillyTavern.ToolManager.invokeFunctionTools;
   vanillaBound = SillyTavern.ToolManager.invokeFunctionTools.bind(SillyTavern.ToolManager);

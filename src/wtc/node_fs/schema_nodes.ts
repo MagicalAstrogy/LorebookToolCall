@@ -1,4 +1,4 @@
-import { scriptFrontMatterSchema, tavernRegexFrontMatterSchema } from '@/wtc/fs_bind';
+import { presetPromptFrontMatterSchema, scriptFrontMatterSchema, tavernRegexFrontMatterSchema } from '@/wtc/fs_bind';
 import { basenameFromPath } from '@/wtc/node_fs/helpers';
 import type { DeletableNode, DirectoryNode, Node, NodeStat, TextFileNode, TextFilePatch } from '@/wtc/node_fs/types';
 import { ToolError } from '@/wtc/result';
@@ -6,6 +6,8 @@ import { validationSchemaToJson } from '@/wtc/schema';
 import { SCHEMAS_ROOT_NAME, SCHEMAS_ROOT_PATH } from '@/wtc/store';
 
 const SCHEMA_FILE_BUILDERS = {
+  // 这些 schema 都是只读导出；这里集中维护文件名到 builder 的映射。
+  'Preset.json': () => validationSchemaToJson(presetPromptFrontMatterSchema),
   'Regex.json': () => validationSchemaToJson(tavernRegexFrontMatterSchema),
   'Script.json': () => validationSchemaToJson(scriptFrontMatterSchema),
 } satisfies Record<string, () => Record<string, any>>;

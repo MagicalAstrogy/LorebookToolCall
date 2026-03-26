@@ -20,13 +20,14 @@ describe('globAction', () => {
     const result = await globAction({ pattern: '*', path: "/" });
 
     expect(result).toStrictEqual({
-      filenames: ['/Characters/', '/Schemas/', '/Worldbooks/'],
+      filenames: ['/Characters/', '/Presets/', '/Schemas/', '/Worldbooks/'],
       durationMs: 0,
-      numFiles: 3,
+      numFiles: 4,
       truncated: false,
     });
   });
 
+  // 校验新增的 Preset schema 也会像 Regex/Script 一样暴露在 /Schemas 下。
   test('lists exported schema json files under the Schemas root', async () => {
     installMockSillyTavern({
       books: {},
@@ -35,9 +36,9 @@ describe('globAction', () => {
     const result = await globAction({ path: '/Schemas', pattern: '*' });
 
     expect(result).toStrictEqual({
-      filenames: ['/Schemas/Regex.json', '/Schemas/Script.json'],
+      filenames: ['/Schemas/Preset.json', '/Schemas/Regex.json', '/Schemas/Script.json'],
       durationMs: 0,
-      numFiles: 2,
+      numFiles: 3,
       truncated: false,
     });
   });
@@ -84,7 +85,9 @@ describe('globAction', () => {
         '/Characters/Alice/FirstMessages/',
         '/Characters/Alice/Regex/',
         '/Characters/Alice/Scripts/',
+        '/Presets/',
         '/Schemas/',
+        '/Schemas/Preset.json',
         '/Schemas/Regex.json',
         '/Schemas/Script.json',
         '/Worldbooks/',
@@ -93,7 +96,7 @@ describe('globAction', () => {
         '/Worldbooks/设定集/Folder/Entry',
       ],
       durationMs: 0,
-      numFiles: 13,
+      numFiles: 15,
       truncated: false,
     });
   });

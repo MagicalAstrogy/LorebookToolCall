@@ -214,4 +214,44 @@ describe('deleteAction', () => {
 
     expect(error.errorType).toBe('ENTRY_NOT_FOUND');
   });
+
+  // 校验 preset prompt 删除后可以通过通用 deleteRollback 直接写回恢复。
+  test('deletes preset prompts and restores them with rollback', async () => {
+    const mock = installMockSillyTavern({
+      presets: {
+        Alpha: {
+          prompts: [
+            {
+              id: 'main',
+              name: 'System/Main',
+              enabled: true,
+              position: { type: 'relative' },
+              role: 'system',
+              content: 'hello preset',
+            },
+          ],
+        },
+      },
+      loadedPresetName: 'Alpha',
+    });
+
+    const result = await deleteAction({ file_path: '/Presets/Current/System/Main' });
+
+    expect(result).toMatchObject({
+      filePath: '/Presets/Current/System/Main',
+      deleted: true,
+      backup: {
+        rollbackMethod: 'deleteRollback',
+        strategy: 'write',
+        filePath: '/Presets/Current/System/Main',
+      },
+    });
+    expect(mock.presets.get('Alpha')?.prompts).toStrictEqual([]);
+
+    await deleteRollback(result.backup);
+    expect(mock.presets.get('Alpha')?.prompts.find(prompt => prompt.name === 'System/Main')).toMatchObject({
+      content: 'hello preset',
+      enabled: true,
+    });
+  });
 });

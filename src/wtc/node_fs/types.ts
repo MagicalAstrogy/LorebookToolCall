@@ -1,4 +1,4 @@
-import type { IndexedEntry } from '@/wtc/store';
+import type { IndexedEntry, PathMappedEntry } from '@/wtc/store';
 
 export type NodeKind = 'directory' | 'file';
 export type ExtendedNodeKind = NodeKind | 'symlink';
@@ -98,14 +98,18 @@ export interface DeleteBackupCapableNode extends DeletableNode {
   createDeleteBackup(): Promise<DeleteBackup>;
 }
 
-export interface LorebookView {
+// PathMappedView 抽象出“路径树 + 精确文件索引 + 冲突集合”这套通用结构，供 Lorebook/Preset 复用。
+export interface PathMappedView<TEntry extends PathMappedEntry = PathMappedEntry> {
+  rootPath: string;
+  files: TEntry[];
+  directories: string[];
+  exactFiles: Map<string, TEntry>;
+  conflicts: Set<string>;
+}
+
+export interface LorebookView extends PathMappedView<IndexedEntry> {
   // 这是一份“单次操作范围内”的有序视图，用于支撑遍历与解析。
   worldbookName: string;
-  rootPath: string;
-  files: IndexedEntry[];
-  directories: string[];
-  exactFiles: Map<string, IndexedEntry>;
-  conflicts: Set<string>;
 }
 
 export function isDirectoryNode(node: Node): node is DirectoryNode {

@@ -3,10 +3,13 @@ import { z } from 'zod';
 import { ToolError, invalidPathDetail } from '@/wtc/result';
 import {
   CHARACTERS_ROOT_PATH,
+  PathMappedEntry,
   isSafeSinglePathSegment,
+  normalizeVirtualPath,
   parseVirtualPath,
   toCharacterRootPath,
   toLorebookRootPath,
+  toPresetRootPath,
 } from '@/wtc/store';
 
 type RegexIndexBuildResult = {
@@ -17,6 +20,15 @@ type RegexIndexBuildResult = {
 type ScriptIndexBuildResult = {
   byName: Map<string, Script>;
   conflicts: Set<string>;
+};
+
+type PresetPromptSource = 'prompts' | 'prompts_unused';
+
+type PresetPromptIndexBuildResult = {
+  files: PresetIndexedPrompt[];
+  exactFiles: Map<string, PresetIndexedPrompt>;
+  conflicts: Set<string>;
+  directories: string[];
 };
 
 type ParsedFrontMatter<T> =
@@ -46,6 +58,10 @@ export type CharacterBinding =
   | { kind: 'scripts_dir'; characterName: string }
   | { kind: 'script_file'; characterName: string; scriptName: string };
 
+export type PresetBinding =
+  | { kind: 'preset_root'; presetName: string }
+  | { kind: 'preset_prompt'; presetName: string; promptPath: string };
+
 export interface CharacterView {
   characterName: string;
   character: Character;
@@ -54,6 +70,19 @@ export interface CharacterView {
   regexConflicts: Set<string>;
   scriptsByName: Map<string, Script>;
   scriptConflicts: Set<string>;
+}
+
+export interface PresetIndexedPrompt extends PathMappedEntry<PresetPrompt> {
+  source: PresetPromptSource;
+}
+
+export interface PresetView {
+  presetName: string;
+  rootPath: string;
+  files: PresetIndexedPrompt[];
+  directories: string[];
+  exactFiles: Map<string, PresetIndexedPrompt>;
+  conflicts: Set<string>;
 }
 
 export interface WorldbookBackedFileTarget {
@@ -75,6 +104,20 @@ const tavernRegexTrimStringsSchema = z.preprocess(value => {
 
 export const REGEX_YFM_SCHEMA_PATH = '/Schemas/Regex.json';
 export const SCRIPT_YFM_SCHEMA_PATH = '/Schemas/Script.json';
+export const PRESET_YFM_SCHEMA_PATH = '/Schemas/Preset.json';
+
+// PresetPrompt.id 运行时允许自定义字符串；这里保留内置 ID 列表，仅用于补充导出 schema 的描述信息。
+const PRESET_SYSTEM_PROMPT_IDS = ['main', 'nsfw', 'jailbreak', 'enhanceDefinitions'] as const;
+const PRESET_PLACEHOLDER_PROMPT_IDS = [
+  'worldInfoBefore',
+  'personaDescription',
+  'charDescription',
+  'charPersonality',
+  'scenario',
+  'worldInfoAfter',
+  'dialogueExamples',
+  'chatHistory',
+] as const;
 
 export const tavernRegexSchema = z
   .object({
@@ -146,6 +189,37 @@ export const scriptFrontMatterSchema = scriptSchema.omit({
 }).extend({
   $schema: z.literal(SCRIPT_YFM_SCHEMA_PATH).optional(),
 });
+
+export const presetPromptFrontMatterSchema = z
+  .object({
+    // 不能直接收窄成 enum，否则会错误拒绝普通 prompt 的自定义 id。
+    id: z.string().describe(
+      `Preset prompt 的逻辑 ID。内置系统 prompt ID: ${PRESET_SYSTEM_PROMPT_IDS.join('、')}；内置占位符 prompt ID: ${PRESET_PLACEHOLDER_PROMPT_IDS.join(
+        '、',
+      )}；也允许使用自定义字符串作为普通 prompt ID。`,
+    ),
+    enabled: z.boolean().describe('是否启用该 prompt。'),
+    position: z
+      .union([
+        z
+          .object({
+            type: z.literal('relative').describe("固定值 'relative'：按 prompt 相对顺序插入。"),
+          })
+          .strict(),
+        z
+          .object({
+            type: z.literal('in_chat').describe("固定值 'in_chat'：插入到聊天记录中的指定深度与顺序。"),
+            depth: z.number().int().describe("仅当 type 为 'in_chat' 时使用：插入到聊天记录的对应深度。"),
+            order: z.number().int().describe("仅当 type 为 'in_chat' 时使用：同一深度下的顺序。"),
+          })
+          .strict(),
+      ])
+      .describe("插入位置。'relative' 表示相对顺序，'in_chat' 表示插入聊天上下文中的指定深度和顺序。"),
+    role: z.enum(['system', 'user', 'assistant']).describe("发送给模型时使用的角色。有效值：'system'、'user'、'assistant'。"),
+    extra: z.record(z.string(), z.any()).optional().describe('额外元数据。'),
+    $schema: z.literal(PRESET_YFM_SCHEMA_PATH).optional(),
+  })
+  .strict();
 
 function buildSchemaMessage(error: z.ZodError) {
   return error.issues.map(issue => `${issue.path.join('.') || '<root>'}: ${issue.message}`).join('; ');
@@ -249,6 +323,19 @@ function createDefaultCharacterScriptFrontMatter(): z.infer<typeof scriptFrontMa
   };
 }
 
+function createDefaultPresetPromptFrontMatter(): z.infer<typeof presetPromptFrontMatterSchema> {
+  // 新建 preset prompt 时沿用酒馆里最保守的默认值，避免额外推断语义。
+  return {
+    id: allocateId('preset-prompt'),
+    enabled: true,
+    position: {
+      type: 'relative',
+    },
+    role: 'system',
+    extra: {},
+  };
+}
+
 function buildRegexIndex(regexes: unknown[]): RegexIndexBuildResult {
   const byName = new Map<string, TavernRegex>();
   const conflicts = new Set<string>();
@@ -291,6 +378,115 @@ function buildScriptIndex(scripts: unknown[]): ScriptIndexBuildResult {
   return { byName, conflicts };
 }
 
+function buildPresetPromptIndex(presetName: string, preset: Preset): PresetPromptIndexBuildResult {
+  // Preset 把 prompts 和 prompts_unused 合并投影到同一棵路径树里，并在这里一次性计算冲突。
+  const rootPath = toPresetRootPath(presetName);
+  const files: PresetIndexedPrompt[] = [];
+  const exactFiles = new Map<string, PresetIndexedPrompt>();
+  const conflicts = new Set<string>();
+  const directories = new Set<string>([`${rootPath}/`]);
+
+  let nextUid = 0;
+  for (const [source, prompts] of [
+    ['prompts', preset.prompts],
+    ['prompts_unused', preset.prompts_unused],
+  ] as const) {
+    for (const prompt of prompts) {
+      if (typeof prompt.name !== 'string' || prompt.name === '') {
+        continue;
+      }
+      const normalized = toPresetPromptFilePath(rootPath, prompt.name);
+      if (!normalized || normalized === rootPath || !normalized.startsWith(`${rootPath}/`)) {
+        continue;
+      }
+      const entryPath = normalized.slice(rootPath.length + 1);
+      const indexed: PresetIndexedPrompt = {
+        filePath: normalized,
+        entryPath,
+        uid: nextUid,
+        raw: structuredClone(prompt),
+        source,
+      };
+      nextUid += 1;
+      files.push(indexed);
+      if (exactFiles.has(normalized)) {
+        conflicts.add(normalized);
+      } else {
+        exactFiles.set(normalized, indexed);
+      }
+
+      const parts = entryPath.split('/');
+      for (let index = 0; index < parts.length - 1; index += 1) {
+        directories.add(`${rootPath}/${parts.slice(0, index + 1).join('/')}/`);
+      }
+    }
+  }
+
+  const occupiedPaths = new Set(
+    [...directories]
+      .map(directory => directory.replace(/\/+$/, ''))
+      .filter(directory => directory !== '' && directory !== rootPath),
+  );
+  const visibleFiles: PresetIndexedPrompt[] = [];
+  const shadowedConflicts = new Set<string>();
+  for (const file of files) {
+    if (occupiedPaths.has(file.filePath)) {
+      shadowedConflicts.add(file.filePath);
+      continue;
+    }
+    visibleFiles.push(file);
+  }
+
+  const visibleExactFiles = new Map<string, PresetIndexedPrompt>();
+  const allConflicts = new Set<string>([...conflicts, ...shadowedConflicts]);
+  for (const file of visibleFiles) {
+    if (visibleExactFiles.has(file.filePath)) {
+      allConflicts.add(file.filePath);
+      continue;
+    }
+    visibleExactFiles.set(file.filePath, file);
+  }
+
+  return {
+    files: visibleFiles.sort((left, right) => left.filePath.localeCompare(right.filePath)),
+    directories: [...directories].sort(),
+    exactFiles: visibleExactFiles,
+    conflicts: allConflicts,
+  };
+}
+
+function toPresetPromptFilePath(rootPath: string, promptName: string) {
+  // Prompt 名允许带子路径，但必须仍落在当前 preset 根目录下。
+  const normalized = normalizeVirtualPath(`${rootPath}/${promptName}`);
+  if (!normalized || normalized === rootPath || !normalized.startsWith(`${rootPath}/`)) {
+    return null;
+  }
+  return normalized;
+}
+
+function resolvePromptContent(prompt: PresetPrompt, body: string) {
+  return body === '' && prompt.content === undefined ? undefined : body;
+}
+
+function materializePresetPrompt(
+  promptPath: string,
+  frontMatter: Omit<z.infer<typeof presetPromptFrontMatterSchema>, '$schema'>,
+  body: string,
+  previous?: PresetPrompt | null,
+): PresetPrompt {
+  // name/content 由文件路径和正文承载；其余字段从 front matter 回填。
+  const nextPrompt = {
+    name: promptPath,
+    content: previous ? resolvePromptContent(previous, body) : body,
+    id: frontMatter.id,
+    enabled: frontMatter.enabled,
+    role: frontMatter.role,
+    position: frontMatter.position,
+    ...(frontMatter.extra !== undefined ? { extra: frontMatter.extra } : {}),
+  };
+  return nextPrompt;
+}
+
 export async function openCharacterView(characterName: string): Promise<CharacterView> {
   const character = await getCharacter(characterName);
   const regexIndex = buildRegexIndex(character.extensions?.regex_scripts ?? []);
@@ -312,6 +508,55 @@ export function getSafeCharacterNames() {
 
 export function getSafeWorldbookNames() {
   return getWorldbookNames().filter(isSafeSinglePathSegment).sort();
+}
+
+function canOpenPreset(presetName: string) {
+  // 宿主侧 getPreset() 可能抛错；映射层把这种 preset 视为不可见。
+  try {
+    getPreset(presetName);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export function getSafePresetNames() {
+  // /Presets 只暴露可安全映射为单一路径段，且内容可成功读取的 preset。
+  return getPresetNames()
+    .filter(isSafeSinglePathSegment)
+    .filter(canOpenPreset)
+    .sort();
+}
+
+export function resolveCurrentPresetName() {
+  const loadedName = getLoadedPresetName();
+  if (!isSafeSinglePathSegment(loadedName)) {
+    return null;
+  }
+  return canOpenPreset(loadedName) ? loadedName : null;
+}
+
+export function hasPresetCurrentConflict() {
+  return getSafePresetNames().includes('Current');
+}
+
+export function openPresetView(presetName: string): PresetView {
+  // PresetView 和 LorebookView 一样，是单次操作内使用的短生命周期快照。
+  let preset: Preset;
+  try {
+    preset = getPreset(presetName);
+  } catch {
+    throw new ToolError('ENTRY_NOT_FOUND', `Preset '${presetName}' 不存在。`);
+  }
+  const index = buildPresetPromptIndex(presetName, preset);
+  return {
+    presetName,
+    rootPath: toPresetRootPath(presetName),
+    files: index.files,
+    directories: index.directories,
+    exactFiles: index.exactFiles,
+    conflicts: index.conflicts,
+  };
 }
 
 export function parseCharacterBinding(path: string): CharacterBinding | null {
@@ -371,6 +616,52 @@ export function parseCharacterBinding(path: string): CharacterBinding | null {
   return null;
 }
 
+export function parsePresetBinding(path: string): PresetBinding | null {
+  const parsed = parseVirtualPath(path);
+  if (parsed.rootKind !== 'preset') {
+    return null;
+  }
+  const presetName = parsed.entityName;
+  const relativePath = parsed.relativePath;
+  if (!relativePath) {
+    return {
+      kind: 'preset_root',
+      presetName,
+    };
+  }
+  return {
+    kind: 'preset_prompt',
+    presetName,
+    promptPath: relativePath,
+  };
+}
+
+function resolvePresetBindingPresetName(logicalPresetName: string) {
+  // /Presets/Current 需要先解引用到真实 preset 名；其余路径直接使用字面名称。
+  if (logicalPresetName !== 'Current') {
+    if (!canOpenPreset(logicalPresetName)) {
+      throw new ToolError('ENTRY_NOT_FOUND', `Preset '${logicalPresetName}' 不存在。`);
+    }
+    return logicalPresetName;
+  }
+  if (hasPresetCurrentConflict()) {
+    throw new ToolError('PATH_CONFLICT', `路径 '${toPresetRootPath('Current')}' 存在重名冲突。`);
+  }
+  const currentPresetName = resolveCurrentPresetName();
+  if (!currentPresetName) {
+    throw new ToolError('ENTRY_NOT_FOUND', `条目 '${toPresetRootPath('Current')}' 不存在。`);
+  }
+  return currentPresetName;
+}
+
+export function resolvePermissionPresetName(path: string) {
+  const binding = parsePresetBinding(path);
+  if (!binding) {
+    return null;
+  }
+  return resolvePresetBindingPresetName(binding.presetName);
+}
+
 export function serializeCharacterRegex(regex: TavernRegex) {
   const { script_name: _scriptName, replace_string, ...frontMatter } = regex;
   return stringifyFrontMatter(withSchemaReference(frontMatter, REGEX_YFM_SCHEMA_PATH), replace_string);
@@ -379,6 +670,11 @@ export function serializeCharacterRegex(regex: TavernRegex) {
 export function serializeCharacterScript(script: Script) {
   const { name: _name, content, ...frontMatter } = script;
   return stringifyFrontMatter(withSchemaReference(frontMatter, SCRIPT_YFM_SCHEMA_PATH), content);
+}
+
+export function serializePresetPrompt(prompt: PresetPrompt) {
+  const { name: _name, content, ...frontMatter } = prompt;
+  return stringifyFrontMatter(withSchemaReference(frontMatter, PRESET_YFM_SCHEMA_PATH), content ?? '');
 }
 
 async function updateCharacterRegex(
@@ -526,6 +822,80 @@ async function updateCharacterScript(
   };
 }
 
+async function updatePresetPrompt(
+  logicalPresetName: string,
+  promptPath: string,
+  content: string,
+): Promise<{ mode: 'create' | 'update'; originalContent: string | null; warnings: string[] }> {
+  // create 固定写入 prompts；update 则保留原来的 prompts/prompts_unused 归属。
+  const presetName = resolvePresetBindingPresetName(logicalPresetName);
+  const view = openPresetView(presetName);
+  const filePath = `${toPresetRootPath(logicalPresetName)}/${promptPath}`;
+  const actualFilePath = `${toPresetRootPath(presetName)}/${promptPath}`;
+  if (view.conflicts.has(actualFilePath)) {
+    throw new ToolError('PATH_CONFLICT', `Prompt '${filePath}' 存在重名冲突。`);
+  }
+
+  const previous = view.exactFiles.get(actualFilePath) ?? null;
+  const parsed = parseYamlFrontMatter(content, presetPromptFrontMatterSchema);
+  const warnings: string[] = [];
+  let nextPrompt: PresetPrompt;
+
+  if (previous) {
+    if (parsed.kind === 'valid') {
+      nextPrompt = materializePresetPrompt(promptPath, withoutSchemaReference(parsed.frontMatter), parsed.body, previous.raw);
+    } else if (parsed.kind === 'missing') {
+      warnings.push('Front Matter Missing');
+      nextPrompt = {
+        ...structuredClone(previous.raw),
+        name: promptPath,
+        content: resolvePromptContent(previous.raw, parsed.body),
+      };
+      if (nextPrompt.content === undefined) {
+        delete nextPrompt.content;
+      }
+    } else {
+      warnings.push('Invalid Front Matter,Ignored');
+      nextPrompt = {
+        ...structuredClone(previous.raw),
+        name: promptPath,
+        content: resolvePromptContent(previous.raw, parsed.body),
+      };
+      if (nextPrompt.content === undefined) {
+        delete nextPrompt.content;
+      }
+    }
+  } else {
+    if (parsed.kind === 'invalid') {
+      throw new ToolError('InputValidationError', `Preset Front Matter 不合法: ${parsed.message}`, [
+        invalidPathDetail(`${toPresetRootPath(logicalPresetName)}/${promptPath}`),
+      ]);
+    }
+    const frontMatter = parsed.kind === 'missing' ? createDefaultPresetPromptFrontMatter() : withoutSchemaReference(parsed.frontMatter);
+    nextPrompt = materializePresetPrompt(promptPath, frontMatter, parsed.body);
+  }
+
+  const targetSource = previous?.source ?? 'prompts';
+  const replaceInSource = (prompts: PresetPrompt[], source: PresetPromptSource) =>
+    prompts
+      .filter(prompt => {
+        const promptFilePath = toPresetPromptFilePath(toPresetRootPath(presetName), prompt.name);
+        return promptFilePath !== actualFilePath || source !== targetSource;
+      })
+      .concat(source === targetSource ? [nextPrompt] : []);
+
+  const preset = structuredClone(getPreset(presetName));
+  preset.prompts = replaceInSource(preset.prompts, 'prompts');
+  preset.prompts_unused = replaceInSource(preset.prompts_unused, 'prompts_unused');
+  await replacePreset(presetName, preset, { render: 'debounced' });
+
+  return {
+    mode: previous ? 'update' : 'create',
+    originalContent: previous ? serializePresetPrompt(previous.raw) : null,
+    warnings,
+  };
+}
+
 export async function readCharacterBoundFile(path: string): Promise<string> {
   const binding = parseCharacterBinding(path);
   if (!binding) {
@@ -565,6 +935,28 @@ export async function readCharacterBoundFile(path: string): Promise<string> {
     default:
       throw new ToolError('InputValidationError', 'file_path 必须指向一个具体文件，而不是目录。', [invalidPathDetail(path)]);
   }
+}
+
+export async function readPresetBoundFile(path: string): Promise<string> {
+  // Preset 文件读操作始终走逻辑路径；Current alias 会在这里折算到真实 preset。
+  const binding = parsePresetBinding(path);
+  if (!binding) {
+    throw new ToolError('ENTRY_NOT_FOUND', `路径 '${path}' 不存在。`);
+  }
+  if (binding.kind !== 'preset_prompt') {
+    throw new ToolError('InputValidationError', 'file_path 必须指向一个具体文件，而不是目录。', [invalidPathDetail(path)]);
+  }
+  const presetName = resolvePresetBindingPresetName(binding.presetName);
+  const view = openPresetView(presetName);
+  const actualFilePath = `${toPresetRootPath(presetName)}/${binding.promptPath}`;
+  if (view.conflicts.has(actualFilePath)) {
+    throw new ToolError('PATH_CONFLICT', `Prompt '${path}' 存在重名冲突。`);
+  }
+  const prompt = view.exactFiles.get(actualFilePath);
+  if (!prompt) {
+    throw new ToolError('ENTRY_NOT_FOUND', `条目 '${path}' 不存在。`);
+  }
+  return serializePresetPrompt(prompt.raw);
 }
 
 export async function writeCharacterBoundFile(path: string, content: string) {
@@ -609,6 +1001,18 @@ export async function writeCharacterBoundFile(path: string, content: string) {
     default:
       throw new ToolError('InputValidationError', 'Write 只支持具体文件路径。', [invalidPathDetail(path)]);
   }
+}
+
+export async function writePresetBoundFile(path: string, content: string) {
+  // 对外暴露的是单文件写入，底层仍通过整份 preset replace 回写。
+  const binding = parsePresetBinding(path);
+  if (!binding) {
+    throw new ToolError('ENTRY_NOT_FOUND', `路径 '${path}' 不存在。`);
+  }
+  if (binding.kind !== 'preset_prompt') {
+    throw new ToolError('InputValidationError', 'Write 只支持具体文件路径。', [invalidPathDetail(path)]);
+  }
+  return updatePresetPrompt(binding.presetName, binding.promptPath, content);
 }
 
 export async function deleteCharacterBoundFile(path: string) {
@@ -669,6 +1073,38 @@ export async function deleteCharacterBoundFile(path: string) {
     default:
       throw new ToolError('InputValidationError', 'Delete 不支持此路径。', [invalidPathDetail(path)]);
   }
+}
+
+export async function deletePresetBoundFile(path: string) {
+  // 删除时只从原数组里删掉对应 prompt，不做 prompts/prompts_unused 迁移。
+  const binding = parsePresetBinding(path);
+  if (!binding) {
+    throw new ToolError('ENTRY_NOT_FOUND', `路径 '${path}' 不存在。`);
+  }
+  if (binding.kind !== 'preset_prompt') {
+    throw new ToolError('InputValidationError', 'Delete 不支持此路径。', [invalidPathDetail(path)]);
+  }
+
+  const presetName = resolvePresetBindingPresetName(binding.presetName);
+  const view = openPresetView(presetName);
+  const actualFilePath = `${toPresetRootPath(presetName)}/${binding.promptPath}`;
+  if (view.conflicts.has(actualFilePath)) {
+    throw new ToolError('PATH_CONFLICT', `Prompt '${path}' 存在重名冲突。`);
+  }
+  const prompt = view.exactFiles.get(actualFilePath);
+  if (!prompt) {
+    throw new ToolError('ENTRY_NOT_FOUND', `条目 '${path}' 不存在。`);
+  }
+
+  const preset = structuredClone(getPreset(presetName));
+  if (prompt.source === 'prompts') {
+    preset.prompts = preset.prompts.filter(item => toPresetPromptFilePath(toPresetRootPath(presetName), item.name) !== actualFilePath);
+  } else {
+    preset.prompts_unused = preset.prompts_unused.filter(
+      item => toPresetPromptFilePath(toPresetRootPath(presetName), item.name) !== actualFilePath,
+    );
+  }
+  await replacePreset(presetName, preset, { render: 'debounced' });
 }
 
 export async function restoreDeletedCharacterFirstMessage(characterName: string, index: number, content: string) {

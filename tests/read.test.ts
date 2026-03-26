@@ -397,4 +397,33 @@ describe('readAction', () => {
     expect(error.errorType).toBe('PERMISSION_DENIED');
     expect(mock.popupCalls).toHaveLength(1);
   });
+
+  // 校验 Read 会把 preset prompt 作为普通文本文件输出，并保留 Current 逻辑路径。
+  test('reads preset prompts through the Current alias as numbered YFM text', async () => {
+    installMockSillyTavern({
+      presets: {
+        Alpha: {
+          prompts: [
+            {
+              id: 'main',
+              name: 'System/Main',
+              enabled: true,
+              position: { type: 'relative' },
+              role: 'system',
+              content: 'hello preset',
+            },
+          ],
+        },
+      },
+      loadedPresetName: 'Alpha',
+    });
+
+    const result = await readAction({
+      file_path: '/Presets/Current/System/Main',
+    });
+
+    expect(result.file.filePath).toBe('/Presets/Current/System/Main');
+    expect(result.file.content).toContain('$schema: /Schemas/Preset.json');
+    expect(result.file.content).toContain('hello preset');
+  });
 });

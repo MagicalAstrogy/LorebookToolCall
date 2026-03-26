@@ -45,7 +45,7 @@
 
 ## Schema 语义
 
-- `/Schemas/PresetPrompt.json` 对应的是 `PresetPrompt` 类型
+- `/Schemas/Preset.json` 对应的是 `PresetPrompt` 类型
 - 不是整个 `Preset` 类型
 
 Schema 字段应覆盖：
@@ -191,6 +191,8 @@ Schema 字段应覆盖：
 - Preset 名来源于 `getPresetNames()`
 - 当前加载 Preset 来源于 `getLoadedPresetName()`
 - Preset 内容读取使用 `getPreset(name)`
+- 如果某个 Preset 在 `getPreset(name)` 时失败，则直接跳过，不暴露到文件树
+- 如果 `getLoadedPresetName()` 指向的 Preset 在 `getPreset()` 时失败，则 `/Presets/Current` 不暴露
 - 写回整体仍通过 `replacePreset(name, preset)` / `createPreset(name, preset)` / `deletePreset(name)`
 - 绑定层负责把单文件改动重新映射回整个 `Preset`
 

@@ -11,8 +11,9 @@ import { walkDirectory } from '@/wtc/node_fs/walk';
 export async function grepAction(args: z.infer<typeof grepArgsSchema>) {
   const parsed = parseVirtualPath(args.path);
   const { normalized } = parsed;
-  if (parsed.rootKind === 'root' || parsed.rootKind === 'lorebooks_root' || parsed.rootKind === 'characters_root') {
-    throw new ToolError('InputValidationError', 'Grep.path 必须落在某一个确定的 Worldbook、Character 或 /Schemas 子树内。', [
+  // Grep 只接受某一棵具体子树；集合根目录过宽，容易把整棵虚拟文件树都扫进去。
+  if (parsed.rootKind === 'root' || parsed.rootKind === 'lorebooks_root' || parsed.rootKind === 'characters_root' || parsed.rootKind === 'presets_root') {
+    throw new ToolError('InputValidationError', 'Grep.path 必须落在某一个确定的 Worldbook、Character、Preset 或 /Schemas 子树内。', [
       invalidPathDetail(args.path, 'path'),
     ]);
   }

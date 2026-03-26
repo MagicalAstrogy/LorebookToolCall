@@ -12,12 +12,14 @@ export async function readAction(args: z.infer<typeof readArgsSchema>) {
   }
   await ensurePathPermission(normalized, 'read', { followCharacterWorldbook: true });
   const parsed = parseVirtualPath(normalized);
+  // Read 只接受具体文件；集合根、实体根和 Schemas 根目录都按目录错误处理。
   if (
     parsed.rootKind === 'root' ||
     parsed.rootKind === 'lorebooks_root' ||
     parsed.rootKind === 'characters_root' ||
+    parsed.rootKind === 'presets_root' ||
     parsed.rootKind === 'schemas_root' ||
-    ((parsed.rootKind === 'lorebook' || parsed.rootKind === 'character') && parsed.relativePath === null)
+    ((parsed.rootKind === 'lorebook' || parsed.rootKind === 'character' || parsed.rootKind === 'preset') && parsed.relativePath === null)
   ) {
     throw new ToolError('InputValidationError', 'Read 只接受具体文件路径，不能读取目录。', [invalidPathDetail(args.file_path)]);
   }

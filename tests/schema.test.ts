@@ -1,5 +1,6 @@
 import { z } from 'zod';
 
+import { presetPromptFrontMatterSchema } from '../src/wtc/fs_bind';
 import { validationSchemaToJson } from '../src/wtc/schema';
 
 function collectAdditionalPropertiesPaths(value: unknown, path: string[] = []): string[] {
@@ -53,5 +54,18 @@ describe('validationSchemaToJson', () => {
     const jsonSchema = validationSchemaToJson(schema);
 
     expect(collectAdditionalPropertiesPaths(jsonSchema)).toStrictEqual([]);
+  });
+
+  // 校验导出的 JSON Schema 仍带着 preset.d.ts 中那组内置 ID/role 语义说明。
+  test('preserves preset prompt enum semantics in field descriptions', () => {
+    const jsonSchema = validationSchemaToJson(presetPromptFrontMatterSchema);
+    const properties = jsonSchema.properties as Record<string, { description?: string }>;
+
+    expect(properties.id?.description).toContain('main');
+    expect(properties.id?.description).toContain('enhanceDefinitions');
+    expect(properties.id?.description).toContain('chatHistory');
+    expect(properties.id?.description).toContain('自定义字符串');
+    expect(properties.role?.description).toContain('system');
+    expect(properties.role?.description).toContain('assistant');
   });
 });

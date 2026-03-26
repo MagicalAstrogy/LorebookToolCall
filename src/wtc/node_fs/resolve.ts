@@ -4,9 +4,10 @@ import {
   isTextFileNode,
   isWritableDirectoryNode,
 } from '@/wtc/node_fs/types';
-import { resolveWorldbookBackedFileTarget } from '@/wtc/fs_bind';
+import { hasPresetCurrentConflict, openPresetView, resolveWorldbookBackedFileTarget } from '@/wtc/fs_bind';
 import { ConflictTextFileNode } from '@/wtc/node_fs/character_child_nodes';
 import { LorebookNode } from '@/wtc/node_fs/lorebook_node';
+import { CurrentPresetConflictNode, CurrentPresetLinkNode, PresetNode, PresetVirtualDirectoryNode } from '@/wtc/node_fs/preset_nodes';
 import { RootNode } from '@/wtc/node_fs/root_node';
 import { VirtualDirectoryNode } from '@/wtc/node_fs/virtual_directory_node';
 import { openLorebookView } from '@/wtc/node_fs/view';
@@ -24,12 +25,27 @@ async function createImplicitWritableDirectoryNode(parent: DirectoryNode, name: 
   if (!childPath) {
     return null;
   }
+  // 只有会在写入时隐式展开子目录的目录类型才在这里特判。
   if (parent instanceof LorebookNode) {
     const view = await parent.openView();
     return new VirtualDirectoryNode(view, childPath, 0, 0);
   }
   if (parent instanceof VirtualDirectoryNode) {
     return new VirtualDirectoryNode(parent.view, childPath, 0, 0);
+  }
+  if (parent instanceof PresetNode) {
+    const view = parent.openView();
+    const actualPath = `${view.rootPath}/${name}`.replace(/\/+/g, '/');
+    return new PresetVirtualDirectoryNode(view, childPath, actualPath, 0, 0);
+  }
+  if (parent instanceof CurrentPresetLinkNode) {
+    const targetPath = await parent.readlink();
+    const actualPath = `${targetPath.replace(/\/+$/, '')}/${name}`;
+    return new PresetVirtualDirectoryNode(openPresetView(parent.targetPresetName), childPath, actualPath, 0, 0);
+  }
+  if (parent instanceof PresetVirtualDirectoryNode) {
+    const actualPath = `${parent.actualPath.replace(/\/+$/, '')}/${name}`;
+    return new PresetVirtualDirectoryNode(parent.view, childPath, actualPath, 0, 0);
   }
   return null;
 }
@@ -58,6 +74,11 @@ export async function resolveNode(path: string): Promise<Node | null> {
 
 /** 按目录语义解析一个绝对路径。 */
 export async function resolveDirectoryNode(path: string): Promise<DirectoryNode | null> {
+  const normalized = normalizeVirtualPath(path);
+  // Current 与真实 preset 同名时，目录语义也要短路成冲突节点，避免继续解引用。
+  if (normalized && normalized.startsWith('/Presets/Current/') && hasPresetCurrentConflict()) {
+    return new CurrentPresetConflictNode('/Presets/Current');
+  }
   const node = await resolveNode(path);
   return node && isDirectoryNode(node) ? node : null;
 }
@@ -67,6 +88,10 @@ export async function resolveFileNode(path: string): Promise<TextFileNode | null
   const normalized = normalizeVirtualPath(path);
   if (!normalized || normalized === '/') {
     return null;
+  }
+  // 文件语义下的 Current 冲突不需要再解路径，直接返回冲突占位文件即可。
+  if (normalized.startsWith('/Presets/Current/') && hasPresetCurrentConflict()) {
+    return new ConflictTextFileNode(normalized);
   }
 
   const worldbookTarget = await resolveWorldbookBackedFileTarget(normalized);
@@ -101,6 +126,10 @@ export async function resolveWritableFileNode(path: string): Promise<TextFileNod
   const normalized = normalizeVirtualPath(path);
   if (!normalized || normalized === '/') {
     return null;
+  }
+  // create-on-write 也必须遵守 Current 冲突规则，避免把冲突路径误当作可创建文件。
+  if (normalized.startsWith('/Presets/Current/') && hasPresetCurrentConflict()) {
+    return new ConflictTextFileNode(normalized);
   }
 
   const existing = await resolveFileNode(normalized);

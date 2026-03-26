@@ -1,17 +1,25 @@
 import {
   getSafeCharacterNames,
+  getSafePresetNames,
   getSafeWorldbookNames,
   openCharacterView,
+  openPresetView,
   parseCharacterBinding,
+  parsePresetBinding,
   readCharacterBoundFile,
+  readPresetBoundFile,
   resolveCharacterWriteCreateRollbackContext,
+  resolvePermissionPresetName,
   resolveWorldbookBackedFileTarget,
   restoreCharacterFirstMessagesLength,
   restoreDeletedCharacterFirstMessage,
+  serializePresetPrompt,
   serializeCharacterRegex,
   serializeCharacterScript,
   toCharacterDescriptionPath,
+  writePresetBoundFile,
   writeCharacterBoundFile,
+  deletePresetBoundFile,
   deleteCharacterBoundFile,
 } from '../src/wtc/fs_bind';
 import { resetPermissionCache } from '../src/wtc/permission';
@@ -164,6 +172,108 @@ describe('fs_bind helpers', () => {
     expect(view.scriptConflicts.has('bad/name')).toBe(false);
   });
 
+  // 校验 preset 名过滤、getPreset 失败跳过，以及 prompt 路径冲突/目录占位冲突。
+  test('filters safe preset names, skips unreadable presets and builds preset view indexes with conflicts', () => {
+    installMockSillyTavern({
+      presets: {
+        Alpha: {
+          prompts: [
+            {
+              id: 'a',
+              name: 'Folder',
+              enabled: true,
+              position: { type: 'relative' },
+              role: 'system',
+              content: 'dir-shadowed',
+            },
+            {
+              id: 'b',
+              name: 'Folder/Child',
+              enabled: true,
+              position: { type: 'relative' },
+              role: 'user',
+              content: 'child',
+            },
+          ],
+          prompts_unused: [
+            {
+              id: 'c',
+              name: 'Duplicate',
+              enabled: true,
+              position: { type: 'relative' },
+              role: 'assistant',
+              content: 'one',
+            },
+            {
+              id: 'd',
+              name: 'Duplicate',
+              enabled: true,
+              position: { type: 'relative' },
+              role: 'assistant',
+              content: 'two',
+            },
+          ],
+        },
+        'bad/name': {},
+      },
+      loadedPresetName: 'Alpha',
+    });
+    (globalThis as any).getPresetNames = () => ['Alpha', 'bad/name', 'Broken'];
+    (globalThis as any).getPreset = (name: string) => {
+      if (name === 'Broken') {
+        throw new Error('broken');
+      }
+      if (name === 'Alpha') {
+        return {
+          settings: {
+            max_context: 8192,
+            max_completion_tokens: 1024,
+            reply_count: 1,
+            should_stream: true,
+            temperature: 1,
+            frequency_penalty: 0,
+            presence_penalty: 0,
+            top_p: 1,
+            repetition_penalty: 1,
+            min_p: 0,
+            top_k: 0,
+            top_a: 0,
+            seed: -1,
+            squash_system_messages: false,
+            reasoning_effort: 'auto',
+            request_thoughts: false,
+            request_images: false,
+            enable_function_calling: true,
+            enable_web_search: false,
+            allow_sending_images: 'auto',
+            allow_sending_videos: false,
+            character_name_prefix: 'none',
+            wrap_user_messages_in_quotes: false,
+          },
+          prompts: [
+            { id: 'a', name: 'Folder', enabled: true, position: { type: 'relative' }, role: 'system', content: 'dir-shadowed' },
+            { id: 'b', name: 'Folder/Child', enabled: true, position: { type: 'relative' }, role: 'user', content: 'child' },
+          ],
+          prompts_unused: [
+            { id: 'c', name: 'Duplicate', enabled: true, position: { type: 'relative' }, role: 'assistant', content: 'one' },
+            { id: 'd', name: 'Duplicate', enabled: true, position: { type: 'relative' }, role: 'assistant', content: 'two' },
+          ],
+          extensions: {
+            regex_scripts: [],
+            tavern_helper: { scripts: [], variales: {} },
+          },
+        } satisfies Preset;
+      }
+      throw new Error(`Preset '${name}' not found.`);
+    };
+
+    expect(getSafePresetNames()).toStrictEqual(['Alpha']);
+    const view = openPresetView('Alpha');
+    expect(view.conflicts.has('/Presets/Alpha/Duplicate')).toBe(true);
+    expect(view.conflicts.has('/Presets/Alpha/Folder')).toBe(true);
+    expect(view.exactFiles.has('/Presets/Alpha/Folder')).toBe(false);
+  });
+
   // 校验 /Characters 下各类逻辑路径都能被解析到正确的绑定类型。
   test('parses character binding paths', () => {
     expect(parseCharacterBinding('/Worldbooks/设定集/正文')).toBeNull();
@@ -216,6 +326,20 @@ describe('fs_bind helpers', () => {
     expect(parseCharacterBinding('/Characters/Alice/Regex/bad/name')).toBeNull();
   });
 
+  // 校验 /Presets 路径会被正确拆成 preset 根目录或具体 prompt 文件。
+  test('parses preset binding paths', () => {
+    expect(parsePresetBinding('/Worldbooks/设定集/正文')).toBeNull();
+    expect(parsePresetBinding('/Presets/Alpha')).toStrictEqual({
+      kind: 'preset_root',
+      presetName: 'Alpha',
+    });
+    expect(parsePresetBinding('/Presets/Alpha/System/Main')).toStrictEqual({
+      kind: 'preset_prompt',
+      presetName: 'Alpha',
+      promptPath: 'System/Main',
+    });
+  });
+
   // 校验角色 Regex/Script 文件序列化时会带 schema front matter，并把正文单独输出。
   test('serializes regex and script files with schema front matter', () => {
     expect(
@@ -256,6 +380,17 @@ describe('fs_bind helpers', () => {
         data: {},
       }),
     ).toContain('$schema: /Schemas/Script.json');
+    expect(
+      serializePresetPrompt({
+        id: 'main',
+        name: 'System/Main',
+        enabled: true,
+        position: { type: 'relative' },
+        role: 'system',
+        content: 'hello',
+        extra: {},
+      }),
+    ).toContain('$schema: /Schemas/Preset.json');
   });
 
   // 校验 Character 绑定文件的基础读写删流程，尤其是 FirstMessages 的补空与删除收缩。
@@ -397,6 +532,91 @@ describe('fs_bind helpers', () => {
 
     const deleteError = await expectToolError(deleteCharacterBoundFile('/Characters/Alice/FirstMessages/99'));
     expect(deleteError.errorType).toBe('ENTRY_NOT_FOUND');
+  });
+
+  // 校验 preset 绑定层的读写删，以及 Current alias 会正确折算到真实 preset。
+  test('reads, writes and deletes preset-bound files, including Current alias', async () => {
+    const mock = installMockSillyTavern({
+      presets: {
+        Alpha: {
+          prompts: [
+            {
+              id: 'main',
+              name: 'System/Main',
+              enabled: true,
+              position: { type: 'relative' },
+              role: 'system',
+              content: 'main body',
+            },
+          ],
+          prompts_unused: [
+            {
+              id: 'side',
+              name: 'Unused/Note',
+              enabled: false,
+              position: { type: 'relative' },
+              role: 'user',
+              content: 'unused body',
+            },
+          ],
+        },
+      },
+      loadedPresetName: 'Alpha',
+    });
+
+    expect(await readPresetBoundFile('/Presets/Alpha/System/Main')).toContain('$schema: /Schemas/Preset.json');
+    expect(await readPresetBoundFile('/Presets/Current/System/Main')).toContain('main body');
+    expect(resolvePermissionPresetName('/Presets/Current/System/Main')).toBe('Alpha');
+
+    await expect(writePresetBoundFile('/Presets/Alpha/New/Prompt', 'body only')).resolves.toMatchObject({
+      mode: 'create',
+      warnings: [],
+      originalContent: null,
+    });
+    expect(mock.presets.get('Alpha')?.prompts.some(prompt => prompt.name === 'New/Prompt')).toBe(true);
+
+    await expect(
+      writePresetBoundFile(
+        '/Presets/Current/System/Main',
+        ['---', '$schema: /Schemas/Preset.json', 'id: main', 'enabled: false', 'position:', '  type: relative', 'role: system', '---', 'updated'].join(
+          '\n',
+        ),
+      ),
+    ).resolves.toMatchObject({
+      mode: 'update',
+    });
+    expect(mock.presets.get('Alpha')?.prompts.find(prompt => prompt.name === 'System/Main')).toMatchObject({
+      name: 'System/Main',
+      content: 'updated',
+      enabled: false,
+    });
+
+    await expect(deletePresetBoundFile('/Presets/Alpha/Unused/Note')).resolves.toBeUndefined();
+    expect(mock.presets.get('Alpha')?.prompts_unused).toStrictEqual([]);
+  });
+
+  // 校验真实 preset 名与保留别名 Current 冲突时，会统一返回 PATH_CONFLICT。
+  test('treats real preset name Current as path conflict', async () => {
+    installMockSillyTavern({
+      presets: {
+        Current: {
+          prompts: [
+            {
+              id: 'main',
+              name: 'Prompt',
+              enabled: true,
+              position: { type: 'relative' },
+              role: 'system',
+              content: 'x',
+            },
+          ],
+        },
+      },
+      loadedPresetName: 'Current',
+    });
+
+    const error = await expectToolError(readPresetBoundFile('/Presets/Current/Prompt'));
+    expect(error.errorType).toBe('PATH_CONFLICT');
   });
 
   // 校验 FirstMessages 的两类回滚辅助：恢复删除项、回退创建导致的尾部扩容。

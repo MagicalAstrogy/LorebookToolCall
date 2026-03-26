@@ -468,4 +468,37 @@ describe('writeAction', () => {
       data: { foo: 'bar' },
     });
   });
+
+  // 校验 /Presets 写入会创建 prompt，并且沿用通用 writeRollback 的 delete 备份策略。
+  test('creates preset prompts under /Presets and rolls back via delete backup', async () => {
+    const mock = installMockSillyTavern({
+      presets: {
+        Alpha: {},
+      },
+      loadedPresetName: 'Alpha',
+    });
+
+    const result = await writeAction({
+      file_path: '/Presets/Alpha/New/Prompt',
+      content: 'preset body',
+    });
+
+    expect(result).toMatchObject({
+      type: 'create',
+      filePath: '/Presets/Alpha/New/Prompt',
+      originalFile: null,
+      backup: {
+        rollbackMethod: 'writeRollback',
+        mode: 'create',
+        filePath: '/Presets/Alpha/New/Prompt',
+        strategy: 'delete',
+      },
+    });
+    expect(mock.presets.get('Alpha')?.prompts.find(prompt => prompt.name === 'New/Prompt')).toMatchObject({
+      content: 'preset body',
+    });
+
+    await writeRollback(result.backup);
+    expect(mock.presets.get('Alpha')?.prompts.find(prompt => prompt.name === 'New/Prompt')).toBeUndefined();
+  });
 });
