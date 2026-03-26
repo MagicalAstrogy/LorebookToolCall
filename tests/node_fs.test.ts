@@ -7,8 +7,10 @@ import {
   listImmediateChildren,
   normalizeChildPath,
 } from '../src/wtc/node_fs/helpers';
+import { CharactersRootNode } from '../src/wtc/node_fs/characters_root_node';
 import { LorebookEntryNode } from '../src/wtc/node_fs/lorebook_entry_node';
 import { LorebookNode } from '../src/wtc/node_fs/lorebook_node';
+import { LorebooksRootNode } from '../src/wtc/node_fs/lorebooks_root_node';
 import { resolveDirectoryNode, resolveFileNode, resolveSearchScope, resolveWritableFileNode } from '../src/wtc/node_fs/resolve';
 import { RootNode } from '../src/wtc/node_fs/root_node';
 import { isAttributeNode, isDeletableNode, isDirectoryNode, isTextFileNode } from '../src/wtc/node_fs/types';
@@ -163,6 +165,46 @@ describe('node_fs node guards and root/lorebook nodes', () => {
     expect(await collectPaths(lorebook.list())).toStrictEqual(['/Worldbooks/设定集/README']);
     expect(await lorebook.getChild('README')).toBeInstanceOf(LorebookEntryNode);
     expect(await lorebook.getChild('missing')).toBeNull();
+  });
+
+  // 校验两个根目录都会过滤非法名称，并按排序后的安全名称暴露子节点。
+  test('filters unsafe names in characters and lorebooks roots', async () => {
+    installMockSillyTavern({
+      books: {
+        zeta: buildBook([]),
+        Alpha: buildBook([]),
+        '非法/名称': buildBook([]),
+      },
+      characters: {
+        zeta: {},
+        Alpha: {},
+        '非法/名称': {},
+      },
+    });
+
+    const charactersRoot = new CharactersRootNode();
+    expect(await charactersRoot.stat()).toStrictEqual({
+      path: '/Characters',
+      name: 'Characters',
+      kind: 'directory',
+      readable: true,
+      writable: false,
+    });
+    expect(await charactersRoot.getChild('非法/名称')).toBeNull();
+    expect(await charactersRoot.getChild('missing')).toBeNull();
+    expect(await collectPaths(charactersRoot.list())).toStrictEqual(['/Characters/Alpha', '/Characters/zeta']);
+
+    const lorebooksRoot = new LorebooksRootNode();
+    expect(await lorebooksRoot.stat()).toStrictEqual({
+      path: '/Worldbooks',
+      name: 'Worldbooks',
+      kind: 'directory',
+      readable: true,
+      writable: false,
+    });
+    expect(await lorebooksRoot.getChild('非法/名称')).toBeNull();
+    expect(await lorebooksRoot.getChild('missing')).toBeNull();
+    expect(await collectPaths(lorebooksRoot.list())).toStrictEqual(['/Worldbooks/Alpha', '/Worldbooks/zeta']);
   });
 
   test('type guards detect node capabilities', async () => {

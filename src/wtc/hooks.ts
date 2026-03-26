@@ -257,7 +257,13 @@ export function onGeneratedReady(data: GeneratedReadyPayload) {
   data.messages.splice(0, data.messages.length, ...reorderedMessages);
 }
 
+let savedRecurseCount = 5;
+
 export function initHooks() {
+
+  savedRecurseCount = SillyTavern.ToolManager.RECURSE_LIMIT;
+  SillyTavern.ToolManager.RECURSE_LIMIT = 20;
+
   vanillaInvokeFunctionTools = SillyTavern.ToolManager.invokeFunctionTools;
   vanillaBound = SillyTavern.ToolManager.invokeFunctionTools.bind(SillyTavern.ToolManager);
   SillyTavern.ToolManager.invokeFunctionTools = async (data: ToolCallMessageSnapshot) => {
@@ -271,6 +277,7 @@ export function initHooks() {
       SillyTavern.ToolManager.invokeFunctionTools = vanillaInvokeFunctionTools;
       vanillaInvokeFunctionTools = undefined;
     }
+    SillyTavern.ToolManager.RECURSE_LIMIT = savedRecurseCount;
     terminator();
   };
 }

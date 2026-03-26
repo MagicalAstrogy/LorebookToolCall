@@ -14,3 +14,5 @@ components.d.ts
 
 .idea/
 .yarn/
+coverage/
+dist/*示例/
