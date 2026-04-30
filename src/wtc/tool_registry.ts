@@ -12,7 +12,7 @@ import { readAction } from '@/wtc/actions/read';
 import { setAttributeAction } from '@/wtc/actions/set_attribute';
 import { writeAction } from '@/wtc/actions/write';
 import {
-//  askUserQuestionArgsSchema,
+  //  askUserQuestionArgsSchema,
   createLorebookArgsSchema,
   deleteArgsSchema,
   getAttributeArgsSchema,
@@ -24,7 +24,7 @@ import {
   writeArgsSchema,
   editArgsSchema,
 } from '@/wtc/schema';
-import { extractReasoningDetails } from '@/wtc/hooks';
+import { extractReasoningContent, extractReasoningDetails } from '@/wtc/hooks';
 
 function parseArgs<T>(schema: z.ZodType<T>, args: unknown): T {
   // 统一把 zod issue 转成工具协议要求的 details 结构。
@@ -79,6 +79,10 @@ function registerJsonTool<T>(
       const reasoningDetails = extractReasoningDetails();
       if (reasoningDetails) {
         result.reasoning_details = reasoningDetails;
+      }
+      const reasoningContent = extractReasoningContent();
+      if (reasoningContent !== undefined) {
+        result.reasoning_content = reasoningContent;
       }
       return stringifyResult(result);
     },

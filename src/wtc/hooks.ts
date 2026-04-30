@@ -80,6 +80,7 @@ type ToolCallMessageSnapshot = {
   choices?: Array<{
     message?: {
       reasoning_details?: ReasoningDetail[];
+      reasoning_content?: unknown;
     };
   }>;
 };
@@ -92,6 +93,7 @@ type GeneratedMessage = {
     id?: string;
   }>;
   reasoning_details?: ReasoningDetail[];
+  reasoning_content?: string;
 };
 
 type GeneratedReadyPayload = {
@@ -128,9 +130,22 @@ export function extractReasoningDetails(
   return undefined;
 }
 
+export function extractReasoningContent(
+  message: ToolCallMessageSnapshot | undefined = prevMessage,
+): string | undefined {
+  for (const choice of message?.choices ?? []) {
+    const content = choice.message?.reasoning_content;
+    if (typeof content === 'string') {
+      return content;
+    }
+  }
+  return undefined;
+}
+
 export function sanitizeToolMessageContent(content: unknown): {
   sanitizedContent?: string;
   reasoningDetails?: ReasoningDetail[];
+  reasoningContent?: string;
 } {
   if (typeof content !== 'string') {
     return {};
@@ -147,8 +162,13 @@ export function sanitizeToolMessageContent(content: unknown): {
     const reasoningDetails = Array.isArray(record.reasoning_details)
       ? record.reasoning_details.filter(isReasoningDetail)
       : undefined;
+    const reasoningContent = typeof record.reasoning_content === 'string' ? record.reasoning_content : undefined;
     if (reasoningDetails && reasoningDetails.length > 0) {
       delete record.reasoning_details;
+      sanitized = true;
+    }
+    if (reasoningContent !== undefined) {
+      delete record.reasoning_content;
       sanitized = true;
     }
     if ('backup' in record) {
@@ -161,6 +181,7 @@ export function sanitizeToolMessageContent(content: unknown): {
     return {
       sanitizedContent: JSON.stringify(record),
       reasoningDetails,
+      reasoningContent,
     };
   } catch {
     return {};
@@ -214,8 +235,8 @@ export function onGeneratedReady(data: GeneratedReadyPayload) {
    *   ]
    * }
    */
-  // 修改data, 在 message 中，如果找到 tool 条目，且content 中 包含 reasoning_details，那么
-  // 移除content 中的这个部分，并将其移动到 上一个 assistant 里面，与 role 同层级。
+  // 修改data, 在 message 中，如果找到 tool 条目，且content 中 包含 reasoning_details/reasoning_content，
+  // 移除content 中的这些字段，并将其移动到上一个 assistant 里面，与 role 同层级。
   if (!Array.isArray(data.messages)) {
     return;
   }
@@ -227,12 +248,12 @@ export function onGeneratedReady(data: GeneratedReadyPayload) {
       continue;
     }
 
-    const { sanitizedContent, reasoningDetails } = sanitizeToolMessageContent(message.content);
+    const { sanitizedContent, reasoningDetails, reasoningContent } = sanitizeToolMessageContent(message.content);
     if (sanitizedContent !== undefined) {
       message.content = sanitizedContent;
     }
 
-    if (!reasoningDetails || reasoningDetails.length === 0) {
+    if ((!reasoningDetails || reasoningDetails.length === 0) && reasoningContent === undefined) {
       continue;
     }
 
@@ -241,10 +262,15 @@ export function onGeneratedReady(data: GeneratedReadyPayload) {
       continue;
     }
 
-    assistantMatch.message.reasoning_details = [
-      ...(assistantMatch.message.reasoning_details ?? []),
-      ...reasoningDetails,
-    ];
+    if (reasoningDetails && reasoningDetails.length > 0) {
+      assistantMatch.message.reasoning_details = [
+        ...(assistantMatch.message.reasoning_details ?? []),
+        ...reasoningDetails,
+      ];
+    }
+    if (reasoningContent !== undefined) {
+      assistantMatch.message.reasoning_content = reasoningContent;
+    }
     messagesToMove.add(assistantMatch.message);
     messagesToMove.add(message);
   }
@@ -260,7 +286,6 @@ export function onGeneratedReady(data: GeneratedReadyPayload) {
 let savedRecurseCount = 5;
 
 export function initHooks() {
-
   savedRecurseCount = SillyTavern.ToolManager.RECURSE_LIMIT;
   SillyTavern.ToolManager.RECURSE_LIMIT = 35;
 
