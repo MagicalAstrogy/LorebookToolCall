@@ -4,8 +4,8 @@
     "skipLibCheck": true,
     "target": "ESNext",
     "module": "ESNext",
+    "rootDir": ".",
     "outDir": "dist",
-    "baseUrl": ".",
     "paths": {
       "@util/*": ["./util/*"],
       "@/*": ["./src/*"]
