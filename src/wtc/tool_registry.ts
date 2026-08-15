@@ -10,6 +10,7 @@ import { globAction } from '@/wtc/actions/glob';
 import { grepAction } from '@/wtc/actions/grep';
 import { readAction } from '@/wtc/actions/read';
 import { setAttributeAction } from '@/wtc/actions/set_attribute';
+import { triggerSlashAction } from '@/wtc/actions/slash';
 import { writeAction } from '@/wtc/actions/write';
 import {
 //  askUserQuestionArgsSchema,
@@ -20,6 +21,7 @@ import {
   grepArgsSchema,
   readArgsSchema,
   setAttributeArgsSchema,
+  triggerSlashArgsSchema,
   validationSchemaToJson,
   writeArgsSchema,
   editArgsSchema,
@@ -99,6 +101,8 @@ const deleteDescription =
   'Deletes a virtual file.\nExample: {"file_path":"/Worldbooks/Book/Entry"}';
 const createLorebookDescription =
   'Creates an empty lorebook.\nExample: {"lorebook_name":"New Book"}';
+const triggerSlashDescription =
+  'Runs a SillyTavern Slash command and returns its pipeline output.\nExample: {"command":"/pass {{lastMessageId}}"}';
 //const askUserQuestionDescription =
 //  "Use this tool when you need to ask the user a direct question during execution.\n\nUsage:\n- Use this tool to gather missing information, clarify ambiguous instructions, or request user-provided text\n- The tool opens an input popup and returns the user's answer as a string\n- If the user cancels the popup, the request fails with USER_REJECTED\n- Prefer this tool only when the needed information cannot be inferred safely from the current context.";
 const getAttributeDescription =
@@ -115,6 +119,7 @@ export function registerLorebookTools() {
   registerJsonTool('Edit', editDescription, editArgsSchema, editAction);
   registerJsonTool('Delete', deleteDescription, deleteArgsSchema, deleteAction);
   registerJsonTool('CreateLorebook', createLorebookDescription, createLorebookArgsSchema, createLorebookAction);
+  registerJsonTool('TriggerSlash', triggerSlashDescription, triggerSlashArgsSchema, triggerSlashAction);
   //正常的对话就是问问题，所以不需要
   //registerJsonTool('AskUserQuestion', askUserQuestionDescription, askUserQuestionArgsSchema, askUserQuestionAction);
   registerJsonTool('GetAttribute', getAttributeDescription, getAttributeArgsSchema, getAttributeAction);
@@ -130,6 +135,7 @@ export function registerLorebookTools() {
       'Edit',
       'Delete',
       'CreateLorebook',
+      'TriggerSlash',
       'AskUserQuestion',
       'GetAttribute',
       'SetAttribute',

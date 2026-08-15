@@ -82,6 +82,12 @@ export const askUserQuestionArgsSchema = z
   })
   .describe('AskUserQuestion 工具参数：弹出输入框向用户提问。');
 
+export const triggerSlashArgsSchema = z
+  .object({
+    command: z.string().min(1).describe('要执行的完整 SillyTavern Slash 命令，如 "/pass {{lastMessageId}}"。'),
+  })
+  .describe('TriggerSlash 工具参数：执行 SillyTavern Slash 命令。');
+
 const scalarOrRegexSchema = z.string().describe('关键字项，使用字符串形式表示；可以是普通文本，也可以是正则表达式的字符串表示。');
 
 export const WORLDBOOK_ENTRY_PATCH_SCAN_DEPTH_SAME_AS_GLOBAL = 0;
