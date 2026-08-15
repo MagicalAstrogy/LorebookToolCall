@@ -2,16 +2,18 @@ import { z } from 'zod';
 
 // 这里定义的 schema 同时服务于运行时参数校验和工具注册时的 JSON Schema 导出。
 const globPathDescription =
-  '要搜索的虚拟目录路径。使用绝对路径，如 "/Worldbooks/设定集"、"/Characters/角色名" 或 "/Schemas"；省略时默认为根目录 "/"。';
-const entryPathDescription =
-  '世界书条目的绝对虚拟路径，如 "/WorldBooks/设定集/NPC/理理"。只接受条目路径，不接受世界书根或虚拟目录。';
+  '要搜索的虚拟目录绝对路径，如 "/Worldbooks/设定集"、"/Characters/角色名" 或 "/Schemas"。';
+const filePathDescription =
+  '具体虚拟文件的绝对路径，如 "/Worldbooks/设定集/NPC/理理" 或 "/Characters/角色名/Description.md"。';
+const attributePathDescription =
+  '支持世界书属性的具体虚拟文件绝对路径，如 "/Worldbooks/设定集/NPC/理理"。';
 
 export const globArgsSchema = z
   .object({
     pattern: z
       .string()
       .min(1)
-      .describe('用于匹配文件名的 glob 模式，例如 "*"、"**/*"、"[mvu_update]*"。若不提供 path，也兼容绝对写法，如 "/Schemas/*"。'),
+      .describe('相对于 path 的 glob 模式，如 "*"、"**/*" 或 "[mvu_update]*"。'),
     path: z.string().describe(globPathDescription),
   })
   .describe('Glob 工具参数：按名称模式列出虚拟世界书文件系统中的文件或目录。');
@@ -19,7 +21,7 @@ export const globArgsSchema = z
 export const grepArgsSchema = z
   .object({
     pattern: z.string().min(1).describe('用于搜索条目内容的正则表达式模式。'),
-    path: z.string().min(1).describe('搜索起点的绝对虚拟路径，必须位于某一个确定的 "/Worldbooks/<Name>" 或 "/Characters/<Name>" 子树内，不能是根目录 "/" 或集合根目录。'),
+    path: z.string().min(1).describe('搜索起点的绝对虚拟路径，必须位于某个具体的 Worldbook、Character、Preset 或 Schemas 子树内。'),
     glob: z.string().optional().describe('用于过滤候选条目路径的 glob 模式，匹配基于 path 的相对路径。'),
     type: z.string().optional().describe('按文件扩展名近似过滤的类型名，如 "ts"、"js"、"json"、"md"、"yaml"。'),
     output_mode: z
@@ -40,33 +42,33 @@ export const grepArgsSchema = z
 
 export const readArgsSchema = z
   .object({
-    file_path: z.string().min(1).describe(entryPathDescription),
-    offset: z.number().int().optional().describe('从第几行开始读取，0 表示从第一行开始；仅在内容较长时提供。'),
-    limit: z.number().int().optional().describe('最多读取多少行；省略时会读取尽可能多的内容，但超长内容会触发保护限制。'),
+    file_path: z.string().min(1).describe(filePathDescription),
+    offset: z.number().int().optional().describe('跳过的行数，默认为 0。'),
+    limit: z.number().int().optional().describe('最多读取的行数；省略时自动分段，0 表示不限制。'),
   })
-  .describe('Read 工具参数：读取一个世界书条目的文本内容。');
+  .describe('读取虚拟文本文件。');
 
 export const writeArgsSchema = z
   .object({
-    file_path: z.string().min(1).describe(entryPathDescription),
-    content: z.string().describe('要写入条目的完整文本内容。若条目已存在则整体覆盖，不存在则创建新条目。'),
+    file_path: z.string().min(1).describe(filePathDescription),
+    content: z.string().describe('要写入的完整文本内容。'),
   })
-  .describe('Write 工具参数：创建或覆盖一个世界书条目。');
+  .describe('创建或覆盖虚拟文本文件。');
 
 export const editArgsSchema = z
   .object({
-    file_path: z.string().min(1).describe(entryPathDescription),
+    file_path: z.string().min(1).describe(filePathDescription),
     old_string: z.string().describe('要在条目内容中查找并替换的原始文本。'),
     new_string: z.string().describe('用于替换 old_string 的新文本。'),
     replace_all: z.boolean().optional().describe('设为 true 时替换全部命中；省略或 false 时要求 old_string 只能命中一次。'),
   })
-  .describe('Edit 工具参数：对已有世界书条目执行精确字符串替换。');
+  .describe('精确替换虚拟文件中的文本。');
 
 export const deleteArgsSchema = z
   .object({
-    file_path: z.string().min(1).describe(entryPathDescription),
+    file_path: z.string().min(1).describe(filePathDescription),
   })
-  .describe('Delete 工具参数：删除一个世界书条目。');
+  .describe('删除虚拟文件。');
 
 export const createLorebookArgsSchema = z
   .object({
@@ -244,13 +246,13 @@ export const worldbookEntryPatchSchema: z.ZodType<any> = z
 
 export const getAttributeArgsSchema = z
   .object({
-    file_path: z.string().min(1).describe(entryPathDescription),
+    file_path: z.string().min(1).describe(attributePathDescription),
   })
   .describe('GetAttribute 工具参数：读取一个世界书条目的完整属性对象。');
 
 export const setAttributeArgsSchema = z
   .object({
-    file_path: z.string().min(1).describe(entryPathDescription),
+    file_path: z.string().min(1).describe(attributePathDescription),
     attributes: worldbookEntryPatchSchema.describe(
       '要应用到条目的属性补丁。对象字段递归合并，数组字段整体替换，未提供字段保持不变。',
     ),

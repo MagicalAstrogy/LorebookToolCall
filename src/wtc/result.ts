@@ -8,7 +8,6 @@ export type ToolErrorCode =
   | 'TEXT_NOT_FOUND'
   | 'PERMISSION_DENIED'
   | 'USER_REJECTED'
-  | 'CONTENT_TOO_LARGE'
   | 'InputValidationError';
 
 // 对外错误结构统一走这个 shape，保持各工具返回协议一致。

@@ -355,6 +355,7 @@ describe('fs_bind helpers', () => {
           ai_output: true,
           slash_command: false,
           world_info: false,
+          reasoning: false,
         },
         destination: {
           display: true,
@@ -378,6 +379,10 @@ describe('fs_bind helpers', () => {
           buttons: [],
         },
         data: {},
+        export_with: {
+          data: false,
+          button: false,
+        },
       }),
     ).toContain('$schema: /Schemas/Script.json');
     expect(

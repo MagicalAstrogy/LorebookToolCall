@@ -273,7 +273,11 @@ export function buildPathIndex(worldbookName: string, book: RawBook, basePath = 
   const directories = new Set<string>([`${basePath}/`]);
 
   for (const raw of getRawBookEntries(book)) {
-    const normalized = normalizeVirtualPath(`${basePath}/${raw.comment ?? ''}`);
+    // 空 comment 没有可映射的文件名，不应占用世界书根路径或影响其他条目。
+    if (typeof raw.comment !== 'string' || raw.comment.trim() === '') {
+      continue;
+    }
+    const normalized = normalizeVirtualPath(`${basePath}/${raw.comment}`);
     if (!normalized || normalized === basePath) {
       continue;
     }

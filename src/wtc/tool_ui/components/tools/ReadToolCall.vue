@@ -9,6 +9,7 @@
       <span class="toolchip"><code>{{ filePath }}</code></span>
       <span class="toolchip">offset: {{ offset }}</span>
       <span class="toolchip">limit: {{ limitLabel }}</span>
+      <span v-if="hasMore" class="toolchip">后续 offset: {{ nextOffset }}</span>
     </template>
     <ErrorCard v-if="record.error" :error="record.error" />
     <ToolDetails v-else title="读取结果" :open="false">
@@ -30,8 +31,10 @@ const wrap = ref(false);
 
 const filePath = computed(() => String(props.record.parameters.file_path ?? props.record.result?.file?.filePath ?? ''));
 const offset = computed(() => Number(props.record.parameters.offset ?? 0));
-const limitLabel = computed(() => props.record.parameters.limit ?? 'all');
+const limitLabel = computed(() => props.record.parameters.limit ?? 'auto');
 const content = computed(() => String(props.record.result?.file?.content ?? ''));
+const hasMore = computed(() => props.record.result?.file?.hasMore === true);
+const nextOffset = computed(() => props.record.result?.file?.nextOffset ?? '');
 const rows = computed(() => parseCatNumberedText(content.value));
 </script>
 

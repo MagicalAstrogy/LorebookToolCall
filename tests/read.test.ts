@@ -33,6 +33,8 @@ describe('readAction', () => {
         numLines: 2,
         startLine: 1,
         totalLines: 2,
+        hasMore: false,
+        nextOffset: null,
       },
     });
   });
@@ -64,31 +66,66 @@ describe('readAction', () => {
         numLines: 2,
         startLine: 2,
         totalLines: 4,
+        hasMore: true,
+        nextOffset: 3,
       },
     });
   });
 
-  test('returns CONTENT_TOO_LARGE when limit is omitted and projected content exceeds 5000 chars', async () => {
+  test('automatically chunks long content and returns continuation metadata when limit is omitted', async () => {
+    const firstLine = 'a'.repeat(3000);
+    const secondLine = 'b'.repeat(3000);
     installMockSillyTavern({
       books: {
         设定集: buildBook([
           {
             uid: 1,
             comment: '长文',
-            content: 'a'.repeat(5001),
+            content: `${firstLine}\n${secondLine}\n结尾`,
           },
         ]),
       },
     });
 
-    const error = await expectToolError(
-      readAction({
-        file_path: '/Worldbooks/设定集/长文',
-      }),
-    );
+    const first = await readAction({
+      file_path: '/Worldbooks/设定集/长文',
+    });
 
-    expect(error.errorType).toBe('CONTENT_TOO_LARGE');
-    expect(error.message).toMatch(/5000 字符/);
+    expect(first.file).toStrictEqual({
+      filePath: '/Worldbooks/设定集/长文',
+      content: `     1\t${firstLine}`,
+      numLines: 1,
+      startLine: 1,
+      totalLines: 3,
+      hasMore: true,
+      nextOffset: 1,
+    });
+
+    const second = await readAction({
+      file_path: '/Worldbooks/设定集/长文',
+      offset: first.file.nextOffset ?? 0,
+    });
+
+    expect(second.file.content).toBe(`     2\t${secondLine}\n     3\t结尾`);
+    expect(second.file.hasMore).toBe(false);
+    expect(second.file.nextOffset).toBeNull();
+  });
+
+  test('returns one complete oversized line so automatic chunking always makes progress', async () => {
+    const oversizedLine = 'x'.repeat(6000);
+    installMockSillyTavern({
+      books: {
+        设定集: buildBook([{ uid: 1, comment: '单行长文', content: `${oversizedLine}\n下一行` }]),
+      },
+    });
+
+    const result = await readAction({
+      file_path: '/Worldbooks/设定集/单行长文',
+    });
+
+    expect(result.file.content).toBe(`     1\t${oversizedLine}`);
+    expect(result.file.hasMore).toBe(true);
+    expect(result.file.nextOffset).toBe(1);
   });
 
   test('rejects worldbook root path as InputValidationError', async () => {
@@ -243,6 +280,8 @@ describe('readAction', () => {
         numLines: 1,
         startLine: 1,
         totalLines: 1,
+        hasMore: false,
+        nextOffset: null,
       },
     });
   });
@@ -265,6 +304,7 @@ describe('readAction', () => {
                   ai_output: false,
                   slash_command: false,
                   world_info: false,
+                  reasoning: false,
                 },
                 destination: {
                   display: true,
@@ -311,6 +351,10 @@ describe('readAction', () => {
                     buttons: [],
                   },
                   data: {},
+                  export_with: {
+                    data: false,
+                    button: false,
+                  },
                 },
               ],
             },
@@ -354,6 +398,8 @@ describe('readAction', () => {
         numLines: 1,
         startLine: 1,
         totalLines: 1,
+        hasMore: false,
+        nextOffset: null,
       },
     });
   });

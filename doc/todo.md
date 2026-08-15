@@ -256,7 +256,6 @@ SetAttribute({
 - `TEXT_NOT_FOUND`
 - `PERMISSION_DENIED`
 - `USER_REJECTED`
-- `CONTENT_TOO_LARGE`
 
 `StructuredPatch` 结构定义如下：
 
@@ -400,10 +399,10 @@ interface StructuredPatch {
 约定：
 
 - `file_path` 必须是绝对路径
-- 只能读取条目，不可读取目录
-- `file_path` 必须指向 `/<LorebookName>/<EntryPath>`，不能直接指向 `/<LorebookName>`
+- 只能读取虚拟文件，不可读取目录
+- `file_path` 必须指向 `/Worldbooks`、`/Characters`、`/Presets` 或 `/Schemas` 下的具体文件
 - 支持对长内容分段读取
-- 默认 `offset = 0`、`limit = 0`
+- 默认 `offset = 0`；省略 `limit` 时自动分段
 - 返回格式：
 
 ```ts
@@ -415,6 +414,8 @@ interface StructuredPatch {
     numLines: number;
     startLine: number;
     totalLines: number;
+    hasMore: boolean;
+    nextOffset: number | null;
   };
 }
 ```
@@ -422,13 +423,13 @@ interface StructuredPatch {
 补充约定：
 
 - `offset` 从 `0` 开始计数，表示跳过前多少行后再返回，默认值为 `0`
-- `limit` 表示本次最多返回多少行，默认值为 `0`，表示不限制行数
+- `limit` 表示本次最多返回多少行；省略时按 5000 字符预算自动分段，显式传 `0` 表示不限制行数
 - `file.content` 使用 `cat -n` 风格，每行格式为 `空格 + 行号 + \t + 行内容`
 - `filePath` 回显归一化后的虚拟路径
 - `startLine` 等于请求的 `offset + 1`
 - `numLines` 为本次实际返回的行数
-- 若内容过长，模型继续使用 `offset` / `limit` 分段读取；不再额外返回 `has_more`
-- 若未指定 `limit`，且本次将返回的总字符数大于 `5000`，则返回 `CONTENT_TOO_LARGE`
+- `hasMore` 表示文件是否还有后续内容；为 `true` 时，使用 `nextOffset` 继续读取
+- 自动分段只在完整行之间切分；若单行超过 5000 字符，仍返回该整行
 - 若 `file_path` 直接指向世界书本身而非条目，则返回 `InputValidationError`
 - 若 `offset < 0`、`limit < 0` 或参数类型不合法，则返回 `InputValidationError`
 - 此时 `details` 中应指出具体出错参数，例如 `offset` 或 `limit`

@@ -27,4 +27,21 @@ describe('buildPathIndex', () => {
     expect(index.exactFiles.get('/Worldbooks/设定集/章节/正文')?.uid).toBe(1);
     expect(index.exactFiles.get('/Worldbooks/设定集/附录')?.uid).toBe(2);
   });
+
+  test('ignores entries with empty or whitespace-only comments', () => {
+    const book = {
+      name: '设定集',
+      entries: {
+        0: rawEntry(1, '', '无路径'),
+        1: rawEntry(2, '   ', '空白路径'),
+        2: rawEntry(3, '正文', '可见内容'),
+      },
+    } satisfies SillyTavern.v2WorldInfoBook;
+
+    const index = buildPathIndex('设定集', book);
+
+    expect(index.files.map(file => file.filePath)).toStrictEqual(['/Worldbooks/设定集/正文']);
+    expect(index.exactFiles.size).toBe(1);
+    expect(index.conflicts.size).toBe(0);
+  });
 });

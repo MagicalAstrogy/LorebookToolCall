@@ -5,6 +5,31 @@ import { readArgsSchema } from '@/wtc/schema';
 import { normalizeVirtualPath, parseVirtualPath, toCatNumberedText } from '@/wtc/store';
 import { resolveDirectoryNode, resolveFileNode } from '@/wtc/node_fs/nodes';
 
+const DEFAULT_READ_CHARACTER_LIMIT = 5000;
+
+function getAutomaticLineLimit(content: string, offset: number) {
+  const lines = content.split('\n');
+  if (offset >= lines.length) {
+    return 0;
+  }
+
+  let characterCount = 0;
+  let lineCount = 0;
+  for (let index = offset; index < lines.length; index += 1) {
+    const nextLength = lines[index].length + (lineCount > 0 ? 1 : 0);
+    // 至少返回一整行；否则单行超长时 nextOffset 永远无法向后推进。
+    if (lineCount > 0 && characterCount + nextLength > DEFAULT_READ_CHARACTER_LIMIT) {
+      break;
+    }
+    characterCount += nextLength;
+    lineCount += 1;
+    if (characterCount >= DEFAULT_READ_CHARACTER_LIMIT) {
+      break;
+    }
+  }
+  return lineCount;
+}
+
 export async function readAction(args: z.infer<typeof readArgsSchema>) {
   const normalized = normalizeVirtualPath(args.file_path);
   if (!normalized) {
@@ -40,15 +65,12 @@ export async function readAction(args: z.infer<typeof readArgsSchema>) {
       ...(limit < 0 ? [{ expected: '大于等于 0 的整数', received: String(limit), path: ['limit'] }] : []),
     ]);
   }
-  if (args.limit === undefined) {
-    // 未显式限制时做一个保守上限，避免一次性把超长条目全部塞给模型。
-    const projected = content.split('\n').slice(offset).join('\n');
-    if (projected.length > 5000) {
-      throw new ToolError('CONTENT_TOO_LARGE', '未指定 limit 时，本次读取内容超过 5000 字符，建议 limit 300~。');
-    }
-  }
 
-  const numbered = toCatNumberedText(content, offset, limit);
+  // 未指定 limit 时按字符预算自动选择完整行；显式 limit（含 0）仍保持原有行数语义。
+  const effectiveLimit = args.limit === undefined ? getAutomaticLineLimit(content, offset) : limit;
+  const numbered = toCatNumberedText(content, offset, effectiveLimit);
+  const nextOffset = offset + numbered.numLines;
+  const hasMore = nextOffset < numbered.totalLines;
   return {
     type: 'text' as const,
     file: {
@@ -57,6 +79,8 @@ export async function readAction(args: z.infer<typeof readArgsSchema>) {
       numLines: numbered.numLines,
       startLine: offset + 1,
       totalLines: numbered.totalLines,
+      hasMore,
+      nextOffset: hasMore ? nextOffset : null,
     },
   };
 }

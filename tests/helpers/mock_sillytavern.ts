@@ -17,8 +17,8 @@ interface MockBook {
 
 interface MockOptions {
   books?: Record<string, MockBook | null>;
-  characters?: Record<string, PartialDeep<Character>>;
-  presets?: Record<string, PartialDeep<Preset>>;
+  characters?: Record<string, PartialDeep<Character, { recurseIntoArrays: true; allowUndefinedInNonTupleArrays: false }>>;
+  presets?: Record<string, PartialDeep<Preset, { recurseIntoArrays: true; allowUndefinedInNonTupleArrays: false }>>;
   loadedPresetName?: string;
   popupResult?: PopupResult;
 }

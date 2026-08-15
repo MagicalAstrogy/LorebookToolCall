@@ -137,8 +137,9 @@ export const tavernRegexSchema = z
         ai_output: z.boolean().describe('是否对 AI 输出生效。'),
         slash_command: z.boolean().describe('是否对 slash command 生效。'),
         world_info: z.boolean().describe('是否对世界书 / world info 生效。'),
+        reasoning: z.boolean().default(false).describe('是否对推理内容生效。'),
       })
-      .describe("正则作用的文本来源。当前支持的来源键为：user_input、ai_output、slash_command、world_info。"),
+      .describe('正则作用的文本来源。'),
     destination: z
       .object({
         display: z.boolean().describe('是否在显示文本时生效。'),
@@ -149,7 +150,7 @@ export const tavernRegexSchema = z
     min_depth: z.number().int().nullable().describe('最小深度；null 表示不限制。'),
     max_depth: z.number().int().nullable().describe('最大深度；null 表示不限制。'),
   })
-  .describe('酒馆正则对象：描述一条可应用于用户输入、AI 输出、slash command 或 world info 的替换规则。')
+  .describe('酒馆正则对象。')
   .strict();
 
 export const tavernRegexFrontMatterSchema = tavernRegexSchema.omit({
@@ -179,6 +180,13 @@ export const scriptSchema = z
       })
       .describe('脚本按钮配置，包括是否启用按钮，以及按钮列表。'),
     data: z.record(z.string(), z.any()).describe('脚本绑定的额外数据；键必须是字符串，值可以是任意类型。'),
+    export_with: z
+      .object({
+        data: z.boolean().describe('导出脚本时是否包含 data。'),
+        button: z.boolean().describe('导出脚本时是否包含按钮配置。'),
+      })
+      .default({ data: false, button: false })
+      .describe('脚本导出时携带的附加内容。'),
   })
   .describe('酒馆助手脚本对象：表示一个 type 为 script 的脚本节点，不包含 folder 节点。')
   .strict();
@@ -298,6 +306,7 @@ function createDefaultCharacterRegexFrontMatter(): z.infer<typeof tavernRegexFro
       ai_output: false,
       slash_command: false,
       world_info: false,
+      reasoning: false,
     },
     destination: {
       display: true,
@@ -320,6 +329,10 @@ function createDefaultCharacterScriptFrontMatter(): z.infer<typeof scriptFrontMa
       buttons: [],
     },
     data: {},
+    export_with: {
+      data: false,
+      button: false,
+    },
   };
 }
 
